@@ -1,0 +1,63 @@
+{
+  "id": "d1fea389-7eae-4290-8ce3-1f01d147f980",
+  "name": "Sri sri ravishankar",
+  "created_at": "2025-10-08T11:49:28.327097",
+  "language": "en",
+  "speed": 1.5,
+  "audio_files": {
+    "left-inhale": [
+      "left-inhale_variant_0.wav",
+      "left-inhale_variant_1.wav",
+      "left-inhale_variant_2.wav"
+    ],
+    "right-exhale": [
+      "right-exhale_variant_0.wav",
+      "right-exhale_variant_1.wav",
+      "right-exhale_variant_2.wav"
+    ],
+    "right-inhale": [
+      "right-inhale_variant_0.wav",
+      "right-inhale_variant_1.wav",
+      "right-inhale_variant_2.wav"
+    ],
+    "left-exhale": [
+      "left-exhale_variant_0.wav",
+      "left-exhale_variant_1.wav",
+      "left-exhale_variant_2.wav"
+    ],
+    "hold": [
+      "hold_variant_0.wav",
+      "hold_variant_1.wav",
+      "hold_variant_2.wav"
+    ]
+  },
+  "instructions": {
+    "left-inhale": [
+      "Breathe in healing prana through your left nostril",
+      "Draw in restorative prana through the left nostril",
+      "Inhale renewing prana gently through your left nostril"
+    ],
+    "right-exhale": [
+      "Release stress and tension through your right nostril",
+      "Exhale and let go of strain through the right nostril",
+      "Breathe out stress, release it through your right nostril"
+    ],
+    "right-inhale": [
+      "Breathe in revitalizing prana through your right nostril",
+      "Draw healing energy into your body through the right nostril",
+      "Inhale renewing prana slowly through your right nostril"
+    ],
+    "left-exhale": [
+      "Exhale and release tension through your left nostril",
+      "Let go of discomfort through the left nostril",
+      "Breathe out stress and soften through your left nostril"
+    ],
+    "hold": [
+      "Hold the healing breath gently within",
+      "Retain the prana, feel restoration inside",
+      "Keep the breath steady, let healing spread"
+    ]
+  },
+  "total_audio_files": 15,
+  "updated_at": "2025-10-10T10:00:23.652728"
+}

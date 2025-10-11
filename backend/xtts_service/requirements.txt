@@ -1,0 +1,30 @@
+# XTTS v2 TTS Backend Dependencies
+# File Location: backend/xtts_service/requirements.txt (REPLACE EXISTING)
+#
+# UPDATED: Added NumPy for audio normalization
+
+# PyTorch (MUST be 2.5.x, NOT 2.6+)
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+
+# Core TTS with compatible transformers
+TTS==0.22.0
+transformers==4.33.3  # CRITICAL: Must be 4.33.3 for TTS 0.22.0
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.9
+
+# Audio Processing
+soundfile==0.12.1
+librosa==0.10.1
+numpy==1.26.4  # For audio normalization (compatible with scipy/contourpy)
+
+# Utilities
+pydantic==2.5.3
+python-dotenv==1.0.0
+
+# Optional but recommended for production
+# gunicorn==21.2.0  # Production WSGI server
