@@ -5,20 +5,20 @@
 // PURPOSE: When user applies AI instruction changes, let them choose
 // which voice pack should be updated with the new instructions
 
-'use client';
+'use client'
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, Mic, X, Loader2, AlertCircle } from 'lucide-react';
-import { VoicePackSummary } from '@/services/voicePackService';
+import React, { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { CheckCircle, Mic, X, Loader2, AlertCircle } from 'lucide-react'
+import { VoicePackSummary } from '@/services/voicePackService'
 
 interface VoiceSelectionModalProps {
-  isOpen: boolean;
-  currentVoicePack: { id: string; name: string } | null;
-  availableVoicePacks: VoicePackSummary[];
-  isProcessing: boolean;
-  onSelect: (packId: string) => void;
-  onClose: () => void;
+  isOpen: boolean
+  currentVoicePack: { id: string; name: string } | null
+  availableVoicePacks: VoicePackSummary[]
+  isProcessing: boolean
+  onSelect: (packId: string) => void
+  onClose: () => void
 }
 
 export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
@@ -30,16 +30,16 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
   onClose,
 }) => {
   const [selectedPackId, setSelectedPackId] = useState<string | null>(
-    currentVoicePack?.id || null
-  );
+    currentVoicePack?.id || null,
+  )
 
   const handleConfirm = () => {
     if (selectedPackId) {
-      onSelect(selectedPackId);
+      onSelect(selectedPackId)
     }
-  };
+  }
 
-  if (!isOpen) return null;
+  if (!isOpen) return null
 
   return (
     <AnimatePresence>
@@ -54,7 +54,7 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden"
         >
           {/* Header */}
@@ -62,7 +62,7 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
             <motion.div
               className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
               animate={{ x: ['-100%', '100%'] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
             />
 
             <div className="flex items-center justify-between relative z-10">
@@ -97,12 +97,16 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
           <div className="p-6 space-y-4">
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <AlertCircle className="text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" size={20} />
+                <AlertCircle
+                  className="text-blue-600 dark:text-blue-400 mt-0.5 shrink-0"
+                  size={20}
+                />
                 <div className="text-sm text-blue-900 dark:text-blue-200">
                   <p className="font-semibold mb-1">About Voice Updates</p>
                   <p>
-                    The selected voice pack will be updated with your new AI-generated instructions.
-                    This will regenerate audio files for that voice.
+                    The selected voice pack will be updated with your new
+                    AI-generated instructions. This will regenerate audio files
+                    for that voice.
                   </p>
                 </div>
               </div>
@@ -117,17 +121,19 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
                   <p className="text-xs mt-1">Create one in Settings first</p>
                 </div>
               ) : (
-                availableVoicePacks.map((pack) => {
-                  const isSelected = selectedPackId === pack.id;
-                  const isCurrent = currentVoicePack?.id === pack.id;
-                  const isDefault = pack.id === 'default';
+                availableVoicePacks.map(pack => {
+                  const isSelected = selectedPackId === pack.id
+                  const isCurrent = currentVoicePack?.id === pack.id
+                  const isDefault = pack.id === 'default'
 
                   return (
                     <motion.button
                       key={pack.id}
                       whileHover={{ scale: isProcessing ? 1 : 1.02 }}
                       whileTap={{ scale: isProcessing ? 1 : 0.98 }}
-                      onClick={() => !isProcessing && setSelectedPackId(pack.id)}
+                      onClick={() =>
+                        !isProcessing && setSelectedPackId(pack.id)
+                      }
                       disabled={isProcessing}
                       className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
                         isSelected
@@ -163,12 +169,15 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
                             animate={{ scale: 1 }}
                             className="ml-2"
                           >
-                            <CheckCircle className="text-purple-600 dark:text-purple-400" size={20} />
+                            <CheckCircle
+                              className="text-purple-600 dark:text-purple-400"
+                              size={20}
+                            />
                           </motion.div>
                         )}
                       </div>
                     </motion.button>
-                  );
+                  )
                 })
               )}
             </div>
@@ -177,8 +186,9 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
             {currentVoicePack && (
               <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
                 <div className="text-xs text-purple-800 dark:text-purple-200">
-                  💡 <strong>Recommended:</strong> Select your currently active voice pack
-                  ({currentVoicePack.name}) for a seamless experience.
+                  💡 <strong>Recommended:</strong> Select your currently active
+                  voice pack ({currentVoicePack.name}) for a seamless
+                  experience.
                 </div>
               </div>
             )}
@@ -217,5 +227,5 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
         </motion.div>
       </motion.div>
     </AnimatePresence>
-  );
-};
+  )
+}

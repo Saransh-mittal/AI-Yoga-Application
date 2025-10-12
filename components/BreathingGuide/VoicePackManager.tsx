@@ -8,20 +8,37 @@
 // - Current speed badge display
 // - Speed regeneration with confirmation
 
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Loader2, CheckCircle, XCircle, Trash2, Download, Globe, Sparkles, Gauge, Star, Edit2, RefreshCw } from 'lucide-react';
-import { useVoicePack } from '@/hooks/useVoicePack';
-import { MessagesConfig, VoiceLanguage } from '@/models/types';
-import { LANGUAGE_NAMES, getDefaultMessages, VOICE_SPEED_PRESETS } from '@/models/constants';
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Upload,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Trash2,
+  Download,
+  Globe,
+  Sparkles,
+  Gauge,
+  Star,
+  Edit2,
+  RefreshCw,
+} from 'lucide-react'
+import { useVoicePack } from '@/hooks/useVoicePack'
+import { MessagesConfig, VoiceLanguage } from '@/models/types'
+import {
+  LANGUAGE_NAMES,
+  getDefaultMessages,
+  VOICE_SPEED_PRESETS,
+} from '@/models/constants'
 
 interface VoicePackManagerProps {
-  currentInstructions: MessagesConfig;
-  currentLanguage: VoiceLanguage;
-  onVoicePackLoaded: () => void;
+  currentInstructions: MessagesConfig
+  currentLanguage: VoiceLanguage
+  onVoicePackLoaded: () => void
 }
 
 export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
@@ -42,74 +59,76 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
     updateVoicePackSpeed, // NEW: For speed updates
     setAsDefault,
     clearError,
-  } = useVoicePack();
+  } = useVoicePack()
 
-  const [voiceName, setVoiceName] = useState('');
-  const [voiceFile, setVoiceFile] = useState<File | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<VoiceLanguage>(currentLanguage);
-  const [selectedSpeed, setSelectedSpeed] = useState<number>(1.0); // NEW: Speed selection
-  const [isDragging, setIsDragging] = useState(false);
-  const [instructionsToUse, setInstructionsToUse] = useState<MessagesConfig>(currentInstructions);
+  const [voiceName, setVoiceName] = useState('')
+  const [voiceFile, setVoiceFile] = useState<File | null>(null)
+  const [selectedLanguage, setSelectedLanguage] =
+    useState<VoiceLanguage>(currentLanguage)
+  const [selectedSpeed, setSelectedSpeed] = useState<number>(1.0) // NEW: Speed selection
+  const [isDragging, setIsDragging] = useState(false)
+  const [instructionsToUse, setInstructionsToUse] =
+    useState<MessagesConfig>(currentInstructions)
 
   // NEW: Edit speed modal state
-  const [editingPackId, setEditingPackId] = useState<string | null>(null);
-  const [editingSpeed, setEditingSpeed] = useState<number>(1.0);
+  const [editingPackId, setEditingPackId] = useState<string | null>(null)
+  const [editingSpeed, setEditingSpeed] = useState<number>(1.0)
 
   useEffect(() => {
-    setSelectedLanguage(currentLanguage);
-  }, [currentLanguage]);
+    setSelectedLanguage(currentLanguage)
+  }, [currentLanguage])
 
   useEffect(() => {
     if (selectedLanguage === currentLanguage) {
-      setInstructionsToUse(currentInstructions);
+      setInstructionsToUse(currentInstructions)
     }
-  }, [currentInstructions, selectedLanguage, currentLanguage]);
+  }, [currentInstructions, selectedLanguage, currentLanguage])
 
   const handleLanguageChange = (language: VoiceLanguage) => {
-    setSelectedLanguage(language);
+    setSelectedLanguage(language)
     if (language === currentLanguage) {
-      setInstructionsToUse(currentInstructions);
+      setInstructionsToUse(currentInstructions)
     } else {
-      setInstructionsToUse(getDefaultMessages(language));
+      setInstructionsToUse(getDefaultMessages(language))
     }
-  };
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]
     if (file) {
-      setVoiceFile(file);
+      setVoiceFile(file)
       if (!voiceName) {
-        const name = file.name.replace(/\.[^/.]+$/, '');
-        setVoiceName(name);
+        const name = file.name.replace(/\.[^/.]+$/, '')
+        setVoiceName(name)
       }
     }
-  };
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+    e.preventDefault()
+    setIsDragging(true)
+  }
 
   const handleDragLeave = () => {
-    setIsDragging(false);
-  };
+    setIsDragging(false)
+  }
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
     if (file && file.type.startsWith('audio/')) {
-      setVoiceFile(file);
+      setVoiceFile(file)
       if (!voiceName) {
-        const name = file.name.replace(/\.[^/.]+$/, '');
-        setVoiceName(name);
+        const name = file.name.replace(/\.[^/.]+$/, '')
+        setVoiceName(name)
       }
     }
-  };
+  }
 
   const handleCreate = async () => {
     if (!voiceFile || !voiceName.trim()) {
-      return;
+      return
     }
 
     try {
@@ -119,76 +138,78 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
         instructions: instructionsToUse,
         language: selectedLanguage,
         speed: selectedSpeed, // NEW: Include speed
-      });
+      })
 
-      setVoiceName('');
-      setVoiceFile(null);
-      setSelectedSpeed(1.0); // Reset speed
-      onVoicePackLoaded();
+      setVoiceName('')
+      setVoiceFile(null)
+      setSelectedSpeed(1.0) // Reset speed
+      onVoicePackLoaded()
     } catch (error) {
       // Error handled by hook
     }
-  };
+  }
 
   const handleLoad = async (packId: string) => {
     try {
-      await loadVoicePack(packId);
-      onVoicePackLoaded();
+      await loadVoicePack(packId)
+      onVoicePackLoaded()
     } catch (error) {
       // Error handled by hook
     }
-  };
+  }
 
   const handleDelete = async (packId: string) => {
     if (confirm('Are you sure you want to delete this voice pack?')) {
       try {
-        await deleteVoicePack(packId);
+        await deleteVoicePack(packId)
       } catch (error) {
         // Error handled by hook
       }
     }
-  };
+  }
 
   const handleSetAsDefault = (packId: string) => {
-    setAsDefault(packId);
-  };
+    setAsDefault(packId)
+  }
 
   // NEW: Edit speed handlers
   const handleEditSpeed = (packId: string, currentSpeed: number) => {
-    setEditingPackId(packId);
-    setEditingSpeed(currentSpeed);
-  };
+    setEditingPackId(packId)
+    setEditingSpeed(currentSpeed)
+  }
 
   const handleSpeedUpdate = async () => {
-    if (!editingPackId) return;
+    if (!editingPackId) return
 
     try {
       await updateVoicePackSpeed({
         packId: editingPackId,
         newSpeed: editingSpeed,
-      });
+      })
 
-      setEditingPackId(null);
-      setEditingSpeed(1.0);
+      setEditingPackId(null)
+      setEditingSpeed(1.0)
     } catch (error) {
-      console.error('Failed to update speed:', error);
+      console.error('Failed to update speed:', error)
     }
-  };
+  }
 
   const getSpeedLabel = (speed: number): string => {
-    if (speed < 0.7) return 'Very Slow';
-    if (speed < 0.9) return 'Slow';
-    if (speed < 1.1) return 'Normal';
-    if (speed < 1.4) return 'Fast';
-    return 'Very Fast';
-  };
+    if (speed < 0.7) return 'Very Slow'
+    if (speed < 0.9) return 'Slow'
+    if (speed < 1.1) return 'Normal'
+    if (speed < 1.4) return 'Fast'
+    return 'Very Fast'
+  }
 
-  const isUsingModifiedInstructions = selectedLanguage === currentLanguage &&
-    JSON.stringify(instructionsToUse) !== JSON.stringify(getDefaultMessages(selectedLanguage));
+  const isUsingModifiedInstructions =
+    selectedLanguage === currentLanguage &&
+    JSON.stringify(instructionsToUse) !==
+      JSON.stringify(getDefaultMessages(selectedLanguage))
 
   // Render edit speed modal using portal
   const renderEditSpeedModal = () => {
-    if (!editingPackId || typeof window === 'undefined') return null;
+    if (!editingPackId || typeof window === 'undefined') return null
 
     return createPortal(
       <AnimatePresence>
@@ -203,21 +224,25 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
             className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden"
           >
             <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 relative overflow-hidden">
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
                 animate={{ x: ['-100%', '100%'] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
               />
 
               <div className="flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-3">
                   <motion.div
                     animate={{ rotate: [0, 180, 360] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      ease: 'linear',
+                    }}
                   >
                     <Gauge className="text-white" size={24} />
                   </motion.div>
@@ -244,11 +269,17 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             <div className="p-6 space-y-4">
               <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
                 <div className="flex items-start gap-2">
-                  <RefreshCw className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" size={16} />
+                  <RefreshCw
+                    className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0"
+                    size={16}
+                  />
                   <div className="text-xs text-amber-800 dark:text-amber-200">
-                    <p className="font-semibold mb-1">⚠️ Audio Regeneration Required</p>
+                    <p className="font-semibold mb-1">
+                      ⚠️ Audio Regeneration Required
+                    </p>
                     <p>
-                      Changing the speed will regenerate all audio files for this voice pack. This may take a few minutes.
+                      Changing the speed will regenerate all audio files for
+                      this voice pack. This may take a few minutes.
                     </p>
                   </div>
                 </div>
@@ -256,7 +287,8 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
 
               <div>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-2">
-                  New Speed: <span className="text-purple-600 dark:text-purple-400">
+                  New Speed:{' '}
+                  <span className="text-purple-600 dark:text-purple-400">
                     {editingSpeed}x ({getSpeedLabel(editingSpeed)})
                   </span>
                 </label>
@@ -267,27 +299,31 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                     max="2.0"
                     step="0.05"
                     value={editingSpeed}
-                    onChange={(e) => setEditingSpeed(parseFloat(e.target.value))}
+                    onChange={e => setEditingSpeed(parseFloat(e.target.value))}
                     disabled={isLoading}
                     className="w-full accent-purple-600"
                   />
                   <div className="grid grid-cols-5 gap-1">
-                    {Object.entries(VOICE_SPEED_PRESETS).map(([key, preset]) => (
-                      <motion.button
-                        key={key}
-                        whileHover={{ scale: isLoading ? 1 : 1.05 }}
-                        whileTap={{ scale: isLoading ? 1 : 0.95 }}
-                        onClick={() => !isLoading && setEditingSpeed(preset.value)}
-                        disabled={isLoading}
-                        className={`px-2 py-1 rounded text-xs transition-all disabled:opacity-50 ${
-                          editingSpeed === preset.value
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {preset.value}x
-                      </motion.button>
-                    ))}
+                    {Object.entries(VOICE_SPEED_PRESETS).map(
+                      ([key, preset]) => (
+                        <motion.button
+                          key={key}
+                          whileHover={{ scale: isLoading ? 1 : 1.05 }}
+                          whileTap={{ scale: isLoading ? 1 : 0.95 }}
+                          onClick={() =>
+                            !isLoading && setEditingSpeed(preset.value)
+                          }
+                          disabled={isLoading}
+                          className={`px-2 py-1 rounded text-xs transition-all disabled:opacity-50 ${
+                            editingSpeed === preset.value
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {preset.value}x
+                        </motion.button>
+                      ),
+                    )}
                   </div>
                 </div>
               </div>
@@ -324,9 +360,9 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
           </motion.div>
         </motion.div>
       </AnimatePresence>,
-      document.body
-    );
-  };
+      document.body,
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -338,7 +374,10 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
           className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-3"
         >
           <div className="flex items-center gap-2">
-            <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
+            <CheckCircle
+              size={16}
+              className="text-green-600 dark:text-green-400"
+            />
             <div className="flex-1">
               <div className="text-sm font-semibold text-green-900 dark:text-green-200">
                 Active Voice Pack
@@ -346,11 +385,15 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
               <div className="text-xs text-green-700 dark:text-green-300 flex items-center gap-2">
                 <span>{currentVoicePack.name}</span>
                 <span>•</span>
-                <span>{LANGUAGE_NAMES[currentVoicePack.language as VoiceLanguage] || currentVoicePack.language}</span>
+                <span>
+                  {LANGUAGE_NAMES[currentVoicePack.language as VoiceLanguage] ||
+                    currentVoicePack.language}
+                </span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
                   <Gauge size={12} />
-                  {currentVoicePack.speed}x ({getSpeedLabel(currentVoicePack.speed)})
+                  {currentVoicePack.speed}x (
+                  {getSpeedLabel(currentVoicePack.speed)})
                 </span>
               </div>
             </div>
@@ -370,8 +413,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             <div className="text-xs text-blue-800 dark:text-blue-200">
               {currentLanguage === 'hi'
                 ? '✨ AI द्वारा संशोधित निर्देशों का उपयोग करते हुए वॉयस पैक बनाया जाएगा'
-                : '✨ Voice pack will use your AI-modified instructions'
-              }
+                : '✨ Voice pack will use your AI-modified instructions'}
             </div>
           </div>
         </motion.div>
@@ -387,12 +429,22 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3"
           >
             <div className="flex items-start gap-2">
-              <XCircle size={16} className="text-red-600 dark:text-red-400 mt-0.5" />
+              <XCircle
+                size={16}
+                className="text-red-600 dark:text-red-400 mt-0.5"
+              />
               <div className="flex-1">
-                <div className="text-sm font-semibold text-red-900 dark:text-red-200">Error</div>
-                <div className="text-xs text-red-700 dark:text-red-300">{error}</div>
+                <div className="text-sm font-semibold text-red-900 dark:text-red-200">
+                  Error
+                </div>
+                <div className="text-xs text-red-700 dark:text-red-300">
+                  {error}
+                </div>
               </div>
-              <button onClick={clearError} className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200">
+              <button
+                onClick={clearError}
+                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
+              >
                 <XCircle size={16} />
               </button>
             </div>
@@ -410,8 +462,13 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3"
           >
             <div className="flex items-center gap-2">
-              <Loader2 size={16} className="text-blue-600 dark:text-blue-400 animate-spin" />
-              <div className="text-sm text-blue-900 dark:text-blue-200">{progressMessage}</div>
+              <Loader2
+                size={16}
+                className="text-blue-600 dark:text-blue-400 animate-spin"
+              />
+              <div className="text-sm text-blue-900 dark:text-blue-200">
+                {progressMessage}
+              </div>
             </div>
           </motion.div>
         )}
@@ -470,7 +527,8 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
         <div>
           <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
             <Gauge size={14} />
-            Voice Speed: <span className="text-purple-600 dark:text-purple-400 font-medium">
+            Voice Speed:{' '}
+            <span className="text-purple-600 dark:text-purple-400 font-medium">
               {selectedSpeed}x ({getSpeedLabel(selectedSpeed)})
             </span>
           </label>
@@ -481,7 +539,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
               max="2.0"
               step="0.05"
               value={selectedSpeed}
-              onChange={(e) => setSelectedSpeed(parseFloat(e.target.value))}
+              onChange={e => setSelectedSpeed(parseFloat(e.target.value))}
               disabled={isLoading}
               className="w-full accent-purple-600"
             />
@@ -505,7 +563,8 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             </div>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            💡 Speed affects how the voice is generated and cannot be changed later without regenerating audio
+            💡 Speed affects how the voice is generated and cannot be changed
+            later without regenerating audio
           </div>
         </div>
 
@@ -517,8 +576,12 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
           <input
             type="text"
             value={voiceName}
-            onChange={(e) => setVoiceName(e.target.value)}
-            placeholder={selectedLanguage === 'en' ? "e.g., My Calm Voice" : "जैसे, मेरी शांत आवाज"}
+            onChange={e => setVoiceName(e.target.value)}
+            placeholder={
+              selectedLanguage === 'en'
+                ? 'e.g., My Calm Voice'
+                : 'जैसे, मेरी शांत आवाज'
+            }
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             disabled={isLoading}
           />
@@ -529,8 +592,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
           <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">
             {selectedLanguage === 'en'
               ? 'Voice Sample (10+ seconds recommended)'
-              : 'आवाज का नमूना (10+ सेकंड अनुशंसित)'
-            }
+              : 'आवाज का नमूना (10+ सेकंड अनुशंसित)'}
           </label>
           <div
             onDragOver={handleDragOver}
@@ -558,10 +620,21 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                   </span>
                 ) : (
                   <span>
-                    {selectedLanguage === 'en'
-                      ? <>Drag and drop or <span className="text-purple-600 dark:text-purple-400">browse</span></>
-                      : <>खींचें और छोड़ें या <span className="text-purple-600 dark:text-purple-400">ब्राउज़ करें</span></>
-                    }
+                    {selectedLanguage === 'en' ? (
+                      <>
+                        Drag and drop or{' '}
+                        <span className="text-purple-600 dark:text-purple-400">
+                          browse
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        खींचें और छोड़ें या{' '}
+                        <span className="text-purple-600 dark:text-purple-400">
+                          ब्राउज़ करें
+                        </span>
+                      </>
+                    )}
                   </span>
                 )}
               </div>
@@ -585,7 +658,9 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
           ) : (
             <>
               <Upload size={16} />
-              {selectedLanguage === 'en' ? 'Create Voice Pack' : 'वॉयस पैक बनाएं'}
+              {selectedLanguage === 'en'
+                ? 'Create Voice Pack'
+                : 'वॉयस पैक बनाएं'}
             </>
           )}
         </motion.button>
@@ -595,18 +670,21 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
       {availableVoicePacks.length > 0 && (
         <div className="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-700">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            {currentLanguage === 'en' ? 'Saved Voice Packs' : 'सहेजे गए वॉयस पैक'}
+            {currentLanguage === 'en'
+              ? 'Saved Voice Packs'
+              : 'सहेजे गए वॉयस पैक'}
           </h3>
 
           <div className="space-y-2">
-            {availableVoicePacks.map((pack) => {
-              const isSystemDefault = pack.id === 'default';
-              const isUserDefault = userDefaultPackId === pack.id;
-              const isActive = currentVoicePack?.id === pack.id;
+            {availableVoicePacks.map(pack => {
+              const isSystemDefault = pack.id === 'default'
+              const isUserDefault = userDefaultPackId === pack.id
+              const isActive = currentVoicePack?.id === pack.id
 
               // Get full pack details to show speed
-              const fullPack = currentVoicePack?.id === pack.id ? currentVoicePack : null;
-              const packSpeed = fullPack?.speed || 1.0;
+              const fullPack =
+                currentVoicePack?.id === pack.id ? currentVoicePack : null
+              const packSpeed = fullPack?.speed || 1.0
 
               return (
                 <motion.div
@@ -650,7 +728,10 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                         )}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {pack.total_audio_files} {currentLanguage === 'en' ? 'audio files' : 'ऑडियो फ़ाइलें'}
+                        {pack.total_audio_files}{' '}
+                        {currentLanguage === 'en'
+                          ? 'audio files'
+                          : 'ऑडियो फ़ाइलें'}
                       </div>
                     </div>
                   </div>
@@ -677,7 +758,11 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                         onClick={() => handleEditSpeed(pack.id, packSpeed)}
                         disabled={isLoading}
                         className="flex-1 min-w-[80px] p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-lg transition-all disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1"
-                        title={currentLanguage === 'en' ? "Edit voice speed" : "वॉयस स्पीड संपादित करें"}
+                        title={
+                          currentLanguage === 'en'
+                            ? 'Edit voice speed'
+                            : 'वॉयस स्पीड संपादित करें'
+                        }
                       >
                         <Edit2 size={14} />
                         {currentLanguage === 'en' ? 'Edit Speed' : 'स्पीड एडिट'}
@@ -691,7 +776,11 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                         onClick={() => handleSetAsDefault(pack.id)}
                         disabled={isLoading}
                         className="flex-1 min-w-[80px] p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-lg transition-all disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1"
-                        title={currentLanguage === 'en' ? "Set as my default voice" : "मेरे डिफ़ॉल्ट के रूप में सेट करें"}
+                        title={
+                          currentLanguage === 'en'
+                            ? 'Set as my default voice'
+                            : 'मेरे डिफ़ॉल्ट के रूप में सेट करें'
+                        }
                       >
                         <Star size={14} />
                         {currentLanguage === 'en' ? 'Set Default' : 'डिफ़ॉल्ट'}
@@ -705,14 +794,18 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                         onClick={() => handleDelete(pack.id)}
                         disabled={isLoading}
                         className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-all disabled:opacity-50"
-                        title={currentLanguage === 'en' ? "Delete this voice pack" : "इस वॉयस पैक को हटाएं"}
+                        title={
+                          currentLanguage === 'en'
+                            ? 'Delete this voice pack'
+                            : 'इस वॉयस पैक को हटाएं'
+                        }
                       >
                         <Trash2 size={14} />
                       </motion.button>
                     )}
                   </div>
                 </motion.div>
-              );
+              )
             })}
           </div>
         </div>
@@ -721,5 +814,5 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
       {/* Edit Speed Modal (Rendered via Portal) */}
       {renderEditSpeedModal()}
     </div>
-  );
-};
+  )
+}
