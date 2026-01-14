@@ -1,7 +1,7 @@
-# XTTS v2 TTS Backend Dependencies
+# XTTS v2 TTS Backend Dependencies - WITH DEFAULT VOICES SUPPORT
 # File Location: backend/xtts_service/requirements.txt (REPLACE EXISTING)
 #
-# UPDATED: Added NumPy for audio normalization
+# UPDATED: Enhanced default voices management with cross-platform support
 
 # PyTorch (MUST be 2.5.x, NOT 2.6+)
 torch==2.5.1
@@ -28,3 +28,7 @@ python-dotenv==1.0.0
 
 # Optional but recommended for production
 # gunicorn==21.2.0  # Production WSGI server
+
+# Development (optional)
+# pytest==7.4.3
+# pytest-asyncio==0.21.1

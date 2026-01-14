@@ -83,7 +83,7 @@ export interface AISettingsUpdate {
  * Helper type: Converts nullable fields to optional fields
  *
  * Example transformation:
- * { mode: 'guided' | null } → { mode?: 'guided' }
+ * { mode: 'guided' | null } â†’ { mode?: 'guided' }
  */
 export type NullableToOptional<T> = {
   [K in keyof T]: T[K] extends null | infer U ? U | undefined : T[K];

@@ -1,12 +1,14 @@
 // components/BreathingGuide/VoicePackManager.tsx
-// Voice Pack Manager with Speed Control & Editing - ENHANCED
-// File Location: components/BreathingGuide/VoicePackManager.tsx (REPLACE EXISTING)
+// Voice Pack Manager - DRAMATICALLY IMPROVED UX
+// File Location: components/BreathingGuide/VoicePackManager.tsx (REPLACE ENTIRE FILE)
 //
-// NEW FEATURES:
-// - Speed selection during voice pack creation
-// - Edit speed button for existing packs
-// - Current speed badge display
-// - Speed regeneration with confirmation
+// UX IMPROVEMENTS:
+// ✅ Single percentage display (removed duplicate)
+// ✅ Uploaded file badge (minimal, hides during processing)
+// ✅ Form collapses during processing
+// ✅ Auto-cleanup after completion
+// ✅ Better visual hierarchy
+// ✅ Smooth state transitions
 
 'use client'
 
@@ -26,6 +28,9 @@ import {
   Star,
   Edit2,
   RefreshCw,
+  AlertCircle,
+  FileAudio,
+  X,
 } from 'lucide-react'
 import { useVoicePack } from '@/hooks/useVoicePack'
 import { MessagesConfig, VoiceLanguage } from '@/models/types'
@@ -34,6 +39,7 @@ import {
   getDefaultMessages,
   VOICE_SPEED_PRESETS,
 } from '@/models/constants'
+import { VoiceProgressBar } from '@/components/BreathingGuide/VoiceProgressBar'
 
 interface VoicePackManagerProps {
   currentInstructions: MessagesConfig
@@ -52,28 +58,40 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
     userDefaultPackId,
     isLoading,
     error,
-    progressMessage,
+    currentProgress,
+    showProgress,
     createVoicePack,
     loadVoicePack,
     deleteVoicePack,
-    updateVoicePackSpeed, // NEW: For speed updates
+    updateVoicePackSpeed,
     setAsDefault,
     clearError,
+    refreshVoicePackList,
   } = useVoicePack()
 
+  // Form state
   const [voiceName, setVoiceName] = useState('')
   const [voiceFile, setVoiceFile] = useState<File | null>(null)
   const [selectedLanguage, setSelectedLanguage] =
     useState<VoiceLanguage>(currentLanguage)
-  const [selectedSpeed, setSelectedSpeed] = useState<number>(1.0) // NEW: Speed selection
+  const [selectedSpeed, setSelectedSpeed] = useState<number>(1.0)
   const [isDragging, setIsDragging] = useState(false)
   const [instructionsToUse, setInstructionsToUse] =
     useState<MessagesConfig>(currentInstructions)
 
-  // NEW: Edit speed modal state
+  // Speed edit modal state
   const [editingPackId, setEditingPackId] = useState<string | null>(null)
   const [editingSpeed, setEditingSpeed] = useState<number>(1.0)
 
+  // Track operation type for progress bar context
+  const [currentOperationType, setCurrentOperationType] = useState<
+    'creation' | 'update' | 'speed_change'
+  >('creation')
+
+  // ✅ Track if we just completed creation (for auto-cleanup)
+  const [justCompleted, setJustCompleted] = useState(false)
+
+  // Sync language and instructions
   useEffect(() => {
     setSelectedLanguage(currentLanguage)
   }, [currentLanguage])
@@ -83,6 +101,26 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
       setInstructionsToUse(currentInstructions)
     }
   }, [currentInstructions, selectedLanguage, currentLanguage])
+
+  // ✅ Auto-cleanup after successful creation
+  useEffect(() => {
+    if (
+      justCompleted &&
+      currentProgress?.status === 'completed' &&
+      currentOperationType === 'creation'
+    ) {
+      // Wait a moment to show success, then cleanup
+      const timer = setTimeout(() => {
+        setVoiceName('')
+        setVoiceFile(null)
+        setSelectedSpeed(1.0)
+        setJustCompleted(false)
+        console.log('✅ Form cleaned up after successful creation')
+      }, 2000) // 2 second delay to show success state
+
+      return () => clearTimeout(timer)
+    }
+  }, [justCompleted, currentProgress, currentOperationType])
 
   const handleLanguageChange = (language: VoiceLanguage) => {
     setSelectedLanguage(language)
@@ -126,26 +164,38 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
     }
   }
 
+  const handleRemoveFile = () => {
+    setVoiceFile(null)
+    // Don't clear the name if user manually typed it
+  }
+
+  /**
+   * Create voice pack with progress tracking
+   */
   const handleCreate = async () => {
     if (!voiceFile || !voiceName.trim()) {
       return
     }
 
     try {
+      setCurrentOperationType('creation')
+      setJustCompleted(false)
+      console.log('🎯 Creating voice pack with progress...')
+
       await createVoicePack({
         name: voiceName.trim(),
         voiceSample: voiceFile,
         instructions: instructionsToUse,
         language: selectedLanguage,
-        speed: selectedSpeed, // NEW: Include speed
+        speed: selectedSpeed,
       })
 
-      setVoiceName('')
-      setVoiceFile(null)
-      setSelectedSpeed(1.0) // Reset speed
+      console.log('✅ Voice pack created successfully')
+      setJustCompleted(true)
       onVoicePackLoaded()
     } catch (error) {
-      // Error handled by hook
+      console.error('❌ Failed to create voice pack:', error)
+      setJustCompleted(false)
     }
   }
 
@@ -172,27 +222,52 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
     setAsDefault(packId)
   }
 
-  // NEW: Edit speed handlers
   const handleEditSpeed = (packId: string, currentSpeed: number) => {
     setEditingPackId(packId)
     setEditingSpeed(currentSpeed)
   }
 
+  /**
+   * Speed update with progress tracking
+   */
   const handleSpeedUpdate = async () => {
     if (!editingPackId) return
 
     try {
+      setCurrentOperationType('speed_change')
+
       await updateVoicePackSpeed({
         packId: editingPackId,
         newSpeed: editingSpeed,
       })
 
-      setEditingPackId(null)
-      setEditingSpeed(1.0)
+      console.log('✅ Speed updated successfully')
+
+      // Only close modal after completion
+      if (currentProgress?.status === 'completed') {
+        setEditingPackId(null)
+        setEditingSpeed(1.0)
+      }
     } catch (error) {
-      console.error('Failed to update speed:', error)
+      console.error('❌ Failed to update speed:', error)
     }
   }
+
+  // ✅ Auto-close speed modal after successful completion
+  useEffect(() => {
+    if (
+      editingPackId &&
+      currentProgress?.status === 'completed' &&
+      currentOperationType === 'speed_change'
+    ) {
+      const timer = setTimeout(() => {
+        setEditingPackId(null)
+        setEditingSpeed(1.0)
+      }, 1500)
+
+      return () => clearTimeout(timer)
+    }
+  }, [editingPackId, currentProgress, currentOperationType])
 
   const getSpeedLabel = (speed: number): string => {
     if (speed < 0.7) return 'Very Slow'
@@ -207,9 +282,15 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
     JSON.stringify(instructionsToUse) !==
       JSON.stringify(getDefaultMessages(selectedLanguage))
 
-  // Render edit speed modal using portal
+  const isProcessingCreation =
+    isLoading && showProgress && currentOperationType === 'creation'
+
+  // Render edit speed modal with integrated progress
   const renderEditSpeedModal = () => {
     if (!editingPackId || typeof window === 'undefined') return null
+
+    const isProcessingSpeed =
+      isLoading && currentOperationType === 'speed_change'
 
     return createPortal(
       <AnimatePresence>
@@ -217,7 +298,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={() => setEditingPackId(null)}
+          onClick={() => !isProcessingSpeed && setEditingPackId(null)}
           className="fixed inset-0 bg-black/60 z-[100] backdrop-blur-sm flex items-center justify-center p-4"
         >
           <motion.div
@@ -227,6 +308,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
             onClick={e => e.stopPropagation()}
             className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden"
           >
+            {/* Header */}
             <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 relative overflow-hidden">
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
@@ -237,10 +319,12 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
               <div className="flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-3">
                   <motion.div
-                    animate={{ rotate: [0, 180, 360] }}
+                    animate={{
+                      rotate: isProcessingSpeed ? 360 : 0,
+                    }}
                     transition={{
                       duration: 2,
-                      repeat: Infinity,
+                      repeat: isProcessingSpeed ? Infinity : 0,
                       ease: 'linear',
                     }}
                   >
@@ -257,8 +341,8 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                 </div>
 
                 <button
-                  onClick={() => setEditingPackId(null)}
-                  disabled={isLoading}
+                  onClick={() => !isProcessingSpeed && setEditingPackId(null)}
+                  disabled={isProcessingSpeed}
                   className="p-2 hover:bg-white/20 rounded-full transition-all disabled:opacity-50 text-white"
                 >
                   <XCircle size={20} />
@@ -266,96 +350,125 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
               </div>
             </div>
 
+            {/* Content */}
             <div className="p-6 space-y-4">
-              <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
-                <div className="flex items-start gap-2">
-                  <RefreshCw
-                    className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0"
-                    size={16}
-                  />
-                  <div className="text-xs text-amber-800 dark:text-amber-200">
-                    <p className="font-semibold mb-1">
-                      ⚠️ Audio Regeneration Required
-                    </p>
-                    <p>
-                      Changing the speed will regenerate all audio files for
-                      this voice pack. This may take a few minutes.
-                    </p>
+              {/* Warning Notice - Only show before processing */}
+              {!isProcessingSpeed && !currentProgress && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <RefreshCw
+                      className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0"
+                      size={16}
+                    />
+                    <div className="text-xs text-amber-800 dark:text-amber-200">
+                      <p className="font-semibold mb-1">
+                        ⚠️ Audio Regeneration Required
+                      </p>
+                      <p>
+                        Changing the speed will regenerate all audio files.
+                        You'll see real-time progress updates.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-2">
-                  New Speed:{' '}
-                  <span className="text-purple-600 dark:text-purple-400">
-                    {editingSpeed}x ({getSpeedLabel(editingSpeed)})
-                  </span>
-                </label>
-                <div className="space-y-2">
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="2.0"
-                    step="0.05"
-                    value={editingSpeed}
-                    onChange={e => setEditingSpeed(parseFloat(e.target.value))}
-                    disabled={isLoading}
-                    className="w-full accent-purple-600"
-                  />
-                  <div className="grid grid-cols-5 gap-1">
-                    {Object.entries(VOICE_SPEED_PRESETS).map(
-                      ([key, preset]) => (
-                        <motion.button
-                          key={key}
-                          whileHover={{ scale: isLoading ? 1 : 1.05 }}
-                          whileTap={{ scale: isLoading ? 1 : 0.95 }}
-                          onClick={() =>
-                            !isLoading && setEditingSpeed(preset.value)
-                          }
-                          disabled={isLoading}
-                          className={`px-2 py-1 rounded text-xs transition-all disabled:opacity-50 ${
-                            editingSpeed === preset.value
-                              ? 'bg-purple-600 text-white'
-                              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                          }`}
-                        >
-                          {preset.value}x
-                        </motion.button>
-                      ),
-                    )}
-                  </div>
-                </div>
-              </div>
+              {/* Speed Controls - Hide during processing */}
+              <AnimatePresence>
+                {!isProcessingSpeed && (
+                  <motion.div
+                    initial={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-2">
+                      New Speed:{' '}
+                      <span className="text-purple-600 dark:text-purple-400">
+                        {editingSpeed}x ({getSpeedLabel(editingSpeed)})
+                      </span>
+                    </label>
+                    <div className="space-y-2">
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.05"
+                        value={editingSpeed}
+                        onChange={e =>
+                          setEditingSpeed(parseFloat(e.target.value))
+                        }
+                        disabled={isLoading}
+                        className="w-full accent-purple-600 disabled:opacity-50"
+                      />
+                      <div className="grid grid-cols-5 gap-1">
+                        {Object.entries(VOICE_SPEED_PRESETS).map(
+                          ([key, preset]) => (
+                            <motion.button
+                              key={key}
+                              whileHover={{ scale: isLoading ? 1 : 1.05 }}
+                              whileTap={{ scale: isLoading ? 1 : 0.95 }}
+                              onClick={() =>
+                                !isLoading && setEditingSpeed(preset.value)
+                              }
+                              disabled={isLoading}
+                              className={`px-2 py-1 rounded text-xs transition-all disabled:opacity-50 ${
+                                editingSpeed === preset.value
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                              }`}
+                            >
+                              {preset.value}x
+                            </motion.button>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setEditingPackId(null)}
-                  disabled={isLoading}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Cancel
-                </button>
-                <motion.button
-                  whileHover={{ scale: isLoading ? 1 : 1.02 }}
-                  whileTap={{ scale: isLoading ? 1 : 0.98 }}
-                  onClick={handleSpeedUpdate}
-                  disabled={isLoading}
-                  className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      Regenerating...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw size={16} />
-                      Update Speed
-                    </>
+              {/* ✨ INTEGRATED PROGRESS - Shown during speed update */}
+              <AnimatePresence>
+                {showProgress &&
+                  currentProgress &&
+                  currentOperationType === 'speed_change' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                    >
+                      <VoiceProgressBar
+                        progress={currentProgress}
+                        language={currentLanguage}
+                        operationType="speed_change"
+                        compact={false}
+                      />
+                    </motion.div>
                   )}
-                </motion.button>
-              </div>
+              </AnimatePresence>
+
+              {/* Action Buttons */}
+              {!isProcessingSpeed && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditingPackId(null)}
+                    disabled={isLoading}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleSpeedUpdate}
+                    disabled={isLoading}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md"
+                  >
+                    <RefreshCw size={16} />
+                    Update Speed
+                  </motion.button>
+                </div>
+              )}
             </div>
           </motion.div>
         </motion.div>
@@ -371,19 +484,19 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-3"
+          className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-200 dark:border-green-700 rounded-xl p-3 shadow-sm"
         >
           <div className="flex items-center gap-2">
             <CheckCircle
-              size={16}
-              className="text-green-600 dark:text-green-400"
+              size={18}
+              className="text-green-600 dark:text-green-400 shrink-0"
             />
             <div className="flex-1">
               <div className="text-sm font-semibold text-green-900 dark:text-green-200">
                 Active Voice Pack
               </div>
-              <div className="text-xs text-green-700 dark:text-green-300 flex items-center gap-2">
-                <span>{currentVoicePack.name}</span>
+              <div className="text-xs text-green-700 dark:text-green-300 flex items-center gap-2 flex-wrap">
+                <span className="font-medium">{currentVoicePack.name}</span>
                 <span>•</span>
                 <span>
                   {LANGUAGE_NAMES[currentVoicePack.language as VoiceLanguage] ||
@@ -452,219 +565,270 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Progress Message */}
-      <AnimatePresence>
-        {progressMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3"
-          >
-            <div className="flex items-center gap-2">
-              <Loader2
-                size={16}
-                className="text-blue-600 dark:text-blue-400 animate-spin"
-              />
-              <div className="text-sm text-blue-900 dark:text-blue-200">
-                {progressMessage}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Create New Voice Pack Form */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+      {/* ✅ IMPROVED Create New Voice Pack Form */}
+      <motion.div layout className="space-y-3">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+          <Sparkles size={16} className="text-purple-600" />
           Create New Voice Pack
         </h3>
 
-        {/* Language Selection */}
-        <div>
-          <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
-            <Globe size={14} />
-            Voice Language
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => handleLanguageChange('en')}
-              disabled={isLoading}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                selectedLanguage === 'en'
-                  ? 'bg-purple-600 text-white shadow-lg'
-                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-lg">🇬🇧</span>
-                <span>English</span>
-              </div>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => handleLanguageChange('hi')}
-              disabled={isLoading}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                selectedLanguage === 'hi'
-                  ? 'bg-purple-600 text-white shadow-lg'
-                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-lg">🇮🇳</span>
-                <span>हिंदी</span>
-              </div>
-            </motion.button>
-          </div>
-        </div>
-
-        {/* NEW: Voice Speed Selection */}
-        <div>
-          <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
-            <Gauge size={14} />
-            Voice Speed:{' '}
-            <span className="text-purple-600 dark:text-purple-400 font-medium">
-              {selectedSpeed}x ({getSpeedLabel(selectedSpeed)})
-            </span>
-          </label>
-          <div className="space-y-2">
-            <input
-              type="range"
-              min="0.5"
-              max="2.0"
-              step="0.05"
-              value={selectedSpeed}
-              onChange={e => setSelectedSpeed(parseFloat(e.target.value))}
-              disabled={isLoading}
-              className="w-full accent-purple-600"
-            />
-            <div className="grid grid-cols-5 gap-1">
-              {Object.entries(VOICE_SPEED_PRESETS).map(([key, preset]) => (
-                <motion.button
-                  key={key}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setSelectedSpeed(preset.value)}
-                  disabled={isLoading}
-                  className={`px-2 py-1 rounded text-xs transition-all ${
-                    selectedSpeed === preset.value
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  {preset.value}x
-                </motion.button>
-              ))}
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            💡 Speed affects how the voice is generated and cannot be changed
-            later without regenerating audio
-          </div>
-        </div>
-
-        {/* Voice Pack Name */}
-        <div>
-          <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">
-            Voice Pack Name
-          </label>
-          <input
-            type="text"
-            value={voiceName}
-            onChange={e => setVoiceName(e.target.value)}
-            placeholder={
-              selectedLanguage === 'en'
-                ? 'e.g., My Calm Voice'
-                : 'जैसे, मेरी शांत आवाज'
-            }
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-            disabled={isLoading}
-          />
-        </div>
-
-        {/* Voice Sample Upload */}
-        <div>
-          <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">
-            {selectedLanguage === 'en'
-              ? 'Voice Sample (10+ seconds recommended)'
-              : 'आवाज का नमूना (10+ सेकंड अनुशंसित)'}
-          </label>
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`relative border-2 border-dashed rounded-lg p-4 transition-colors ${
-              isDragging
-                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-            }`}
-          >
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={handleFileChange}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              disabled={isLoading}
-            />
-            <div className="text-center">
-              <Upload size={24} className="mx-auto mb-2 text-gray-400" />
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                {voiceFile ? (
-                  <span className="font-medium text-purple-600 dark:text-purple-400">
-                    {voiceFile.name}
-                  </span>
-                ) : (
-                  <span>
-                    {selectedLanguage === 'en' ? (
-                      <>
-                        Drag and drop or{' '}
-                        <span className="text-purple-600 dark:text-purple-400">
-                          browse
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        खींचें और छोड़ें या{' '}
-                        <span className="text-purple-600 dark:text-purple-400">
-                          ब्राउज़ करें
-                        </span>
-                      </>
-                    )}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Create Button */}
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleCreate}
-          disabled={isLoading || !voiceFile || !voiceName.trim()}
-          className="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+        {/* Form Container - Collapses during processing */}
+        <motion.div
+          layout
+          className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border-2 border-purple-200 dark:border-purple-700 rounded-xl overflow-hidden shadow-sm"
         >
-          {isLoading ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              {selectedLanguage === 'en' ? 'Creating...' : 'बना रहे हैं...'}
-            </>
-          ) : (
-            <>
-              <Upload size={16} />
-              {selectedLanguage === 'en'
-                ? 'Create Voice Pack'
-                : 'वॉयस पैक बनाएं'}
-            </>
-          )}
-        </motion.button>
-      </div>
+          {/* ✅ Form Fields - Hidden during processing */}
+          <AnimatePresence>
+            {!isProcessingCreation && (
+              <motion.div
+                initial={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                className="p-4 space-y-3"
+              >
+                {/* Language Selection */}
+                <div>
+                  <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+                    <Globe size={14} />
+                    Voice Language
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => handleLanguageChange('en')}
+                      disabled={isLoading}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                        selectedLanguage === 'en'
+                          ? 'bg-purple-600 text-white shadow-lg'
+                          : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-lg">🇬🇧</span>
+                        <span>English</span>
+                      </div>
+                    </motion.button>
+
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => handleLanguageChange('hi')}
+                      disabled={isLoading}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                        selectedLanguage === 'hi'
+                          ? 'bg-purple-600 text-white shadow-lg'
+                          : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-lg">🇮🇳</span>
+                        <span>हिंदी</span>
+                      </div>
+                    </motion.button>
+                  </div>
+                </div>
+
+                {/* Voice Speed Selection */}
+                <div>
+                  <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+                    <Gauge size={14} />
+                    Voice Speed:{' '}
+                    <span className="text-purple-600 dark:text-purple-400 font-medium">
+                      {selectedSpeed}x ({getSpeedLabel(selectedSpeed)})
+                    </span>
+                  </label>
+                  <div className="space-y-2">
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.05"
+                      value={selectedSpeed}
+                      onChange={e =>
+                        setSelectedSpeed(parseFloat(e.target.value))
+                      }
+                      disabled={isLoading}
+                      className="w-full accent-purple-600 disabled:opacity-50"
+                    />
+                    <div className="grid grid-cols-5 gap-1">
+                      {Object.entries(VOICE_SPEED_PRESETS).map(
+                        ([key, preset]) => (
+                          <motion.button
+                            key={key}
+                            whileHover={{ scale: isLoading ? 1 : 1.05 }}
+                            whileTap={{ scale: isLoading ? 1 : 0.95 }}
+                            onClick={() =>
+                              !isLoading && setSelectedSpeed(preset.value)
+                            }
+                            disabled={isLoading}
+                            className={`px-2 py-1 rounded text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                              selectedSpeed === preset.value
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            }`}
+                          >
+                            {preset.value}x
+                          </motion.button>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Voice Pack Name */}
+                <div>
+                  <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">
+                    Voice Pack Name
+                  </label>
+                  <input
+                    type="text"
+                    value={voiceName}
+                    onChange={e => setVoiceName(e.target.value)}
+                    placeholder={
+                      selectedLanguage === 'en'
+                        ? 'e.g., My Calm Voice'
+                        : 'जैसे, मेरी शांत आवाज'
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isLoading}
+                  />
+                </div>
+
+                {/* ✅ Voice Sample Upload - Shows badge when file selected */}
+                <div>
+                  <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">
+                    {selectedLanguage === 'en'
+                      ? 'Voice Sample (10+ seconds recommended)'
+                      : 'आवाज का नमूना (10+ सेकंड अनुशंसित)'}
+                  </label>
+
+                  {voiceFile ? (
+                    // ✅ Compact file badge when file is selected
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-white dark:bg-gray-800 border-2 border-purple-300 dark:border-purple-600 rounded-lg p-3 flex items-center gap-3"
+                    >
+                      <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center shrink-0">
+                        <FileAudio
+                          size={20}
+                          className="text-purple-600 dark:text-purple-400"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                          {voiceFile.name}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {(voiceFile.size / 1024 / 1024).toFixed(2)} MB
+                        </div>
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={handleRemoveFile}
+                        disabled={isLoading}
+                        className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-all text-red-600 dark:text-red-400 disabled:opacity-50"
+                        title="Remove file"
+                      >
+                        <X size={16} />
+                      </motion.button>
+                    </motion.div>
+                  ) : (
+                    // Upload area when no file
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`relative border-2 border-dashed rounded-lg p-4 transition-colors ${
+                        isDragging
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                        disabled={isLoading}
+                      />
+                      <div className="text-center pointer-events-none">
+                        <Upload
+                          size={24}
+                          className="mx-auto mb-2 text-gray-400"
+                        />
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {selectedLanguage === 'en' ? (
+                            <>
+                              Drag and drop or{' '}
+                              <span className="text-purple-600 dark:text-purple-400 font-medium">
+                                browse
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              खींचें और छोड़ें या{' '}
+                              <span className="text-purple-600 dark:text-purple-400 font-medium">
+                                ब्राउज़ करें
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ✅ Create Button / Progress Area */}
+          <div className="px-4 pb-4">
+            {!isProcessingCreation ? (
+              // Create button when not processing
+              <motion.button
+                layout
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleCreate}
+                disabled={isLoading || !voiceFile || !voiceName.trim()}
+                className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-md"
+              >
+                <Upload size={16} />
+                {selectedLanguage === 'en'
+                  ? 'Create Voice Pack'
+                  : 'वॉयस पैक बनाएं'}
+              </motion.button>
+            ) : (
+              // ✅ Progress shown during creation
+              <motion.div
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-3"
+              >
+                {/* File info badge during processing */}
+                <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <FileAudio size={14} className="text-purple-600" />
+                  <span>Using: {voiceFile?.name}</span>
+                </div>
+
+                {/* Enhanced progress bar */}
+                {showProgress && currentProgress && (
+                  <VoiceProgressBar
+                    progress={currentProgress}
+                    language={currentLanguage}
+                    operationType="creation"
+                    compact={false}
+                  />
+                )}
+              </motion.div>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
 
       {/* Saved Voice Packs List */}
       {availableVoicePacks.length > 0 && (
@@ -681,7 +845,6 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
               const isUserDefault = userDefaultPackId === pack.id
               const isActive = currentVoicePack?.id === pack.id
 
-              // Get full pack details to show speed
               const fullPack =
                 currentVoicePack?.id === pack.id ? currentVoicePack : null
               const packSpeed = fullPack?.speed || 1.0
@@ -693,7 +856,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                   animate={{ opacity: 1, x: 0 }}
                   className={`p-3 rounded-lg border transition-all ${
                     isActive
-                      ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700'
+                      ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700 shadow-sm'
                       : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
                   }`}
                 >
@@ -719,7 +882,6 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                             Active
                           </span>
                         )}
-                        {/* NEW: Speed Badge */}
                         {fullPack && (
                           <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-medium rounded flex items-center gap-1">
                             <Gauge size={12} />
@@ -750,7 +912,6 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
                       </motion.button>
                     )}
 
-                    {/* NEW: Edit Speed Button */}
                     {isActive && !isSystemDefault && (
                       <motion.button
                         whileHover={{ scale: 1.05 }}
@@ -811,7 +972,7 @@ export const VoicePackManager: React.FC<VoicePackManagerProps> = ({
         </div>
       )}
 
-      {/* Edit Speed Modal (Rendered via Portal) */}
+      {/* Edit Speed Modal */}
       {renderEditSpeedModal()}
     </div>
   )

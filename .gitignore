@@ -47,3 +47,26 @@ __pycache__/
 *.pyd
 *.db
 *.sqlite3
+
+# Generated audio files
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# Voice packs and generated voice content
+backend/xtts_service/voice_packs/
+backend/xtts_service/default_voices/
+backend/xtts_service/guided_voices/
+backend/xtts_service/common_voice_downloads/
+backend/xtts_service/cv_clips_selected/
+backend/xtts_service/voice_pack_generator/
+
+# CSV and data files
+*.csv
+
+# Test directories
+app/test-sse/
+
+# UI components (if auto-generated)
+components/ui/

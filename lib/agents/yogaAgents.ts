@@ -19,11 +19,11 @@ import { z } from 'zod';
 export const VoiceCustomizationOutputSchema = z.object({
   type: z.literal('update_messages'),
   instructions: z.object({
-    'left-inhale': z.array(z.string()).min(2).max(3),
-    'right-exhale': z.array(z.string()).min(2).max(3),
-    'right-inhale': z.array(z.string()).min(2).max(3),
-    'left-exhale': z.array(z.string()).min(2).max(3),
-    hold: z.array(z.string()).min(2).max(3),
+    'left-inhale': z.array(z.string()).min(2),
+    'right-exhale': z.array(z.string()).min(2),
+    'right-inhale': z.array(z.string()).min(2),
+    'left-exhale': z.array(z.string()).min(2),
+    hold: z.array(z.string()).min(2),
   }),
   explanation: z.string().min(10),
 });
@@ -280,7 +280,7 @@ export function createVoiceCustomizationAgent(model: AIModel): Agent<any, any> {
         '**Divine Energy:** Spiritual connection, higher power, universal energy\n' +
         'Example: "Feel divine energy entering through your left nostril"\n\n' +
         '**CREATING RAVI SHANKAR STYLE INSTRUCTIONS:**\n\n' +
-        'For each phase, create 3 variants that:\n' +
+        'For each phase, create 3-6 variants that:\n' +
         '1. Mention the specific action (inhale/hold/exhale, which nostril)\n' +
         '2. Include thematic elements (vitality, healing, prana, divine, stress release, etc.)\n' +
         '3. Sound uplifting and spiritual but not overly complex\n' +
@@ -310,27 +310,27 @@ export function createVoiceCustomizationAgent(model: AIModel): Agent<any, any> {
         '    "left-inhale": [\n' +
         '      "phrase 1 with left nostril",\n' +
         '      "phrase 2 with left nostril",\n' +
-        '      "phrase 3 with left nostril"\n' +
+        '      "phrase n with left nostril"\n' +
         '    ],\n' +
         '    "hold": [\n' +
         '      "phrase 1 for holding",\n' +
         '      "phrase 2 for holding",\n' +
-        '      "phrase 3 for holding"\n' +
+        '      "phrase n for holding"\n' +
         '    ],\n' +
         '    "left-exhale": [\n' +
         '      "phrase 1 through left nostril",\n' +
         '      "phrase 2 through left nostril",\n' +
-        '      "phrase 3 through left nostril"\n' +
+        '      "phrase n through left nostril"\n' +
         '    ],\n' +
         '    "right-inhale": [\n' +
         '      "phrase 1 through right nostril",\n' +
         '      "phrase 2 through right nostril",\n' +
-        '      "phrase 3 through right nostril"\n' +
+        '      "phrase n through right nostril"\n' +
         '    ],\n' +
         '    "right-exhale": [\n' +
         '      "phrase 1 through right nostril",\n' +
         '      "phrase 2 through right nostril",\n' +
-        '      "phrase 3 through right nostril"\n' +
+        '      "phrase n through right nostril"\n' +
         '    ]\n' +
         '  },\n' +
         '  "explanation": "Brief explanation of what you changed and why"\n' +
@@ -342,7 +342,7 @@ export function createVoiceCustomizationAgent(model: AIModel): Agent<any, any> {
         '- Don\'t be overly poetic or complex\n' +
         '- Make it feel uplifting and positive\n\n' +
         'Now respond with new instructions based on the user\'s request.\n\n' +
-        'Each phase must have 2-3 instruction variants.\n\n' +
+        'Each phase must have 3-6 instruction variants.\n\n' +
         'CRITICAL: Your response will be validated against a strict schema. ' +
         'Ensure all fields are present and correctly formatted.';
     },

@@ -1,16 +1,18 @@
 // hooks/useVoicePack.ts
-// Voice Pack Hook with User Default Support - ENHANCED
-// File Location: hooks/useVoicePack.ts (REPLACE EXISTING)
+// Voice Pack Hook - WITH SSE PROGRESS TRACKING
+// File Location: hooks/useVoicePack.ts (REPLACE ENTIRE FILE)
 //
-// NEW: Loads user's preferred default voice pack
-// NEW: setAsDefault() function to change default
-// NEW: Returns which pack is set as default
+// EDUCATIONAL NOTES:
+// - State management for progress data
+// - Callback pattern for progress updates
+// - Clean separation of concerns: service handles SSE, hook manages state
 
 import { useState, useEffect, useCallback } from 'react';
 import { MessagesConfig, VoiceLanguage } from '@/models/types';
 import { voicePackService, VoicePack, VoicePackSummary } from '@/services/voicePackService';
 import { audioService } from '@/services/audioService';
 import { defaultVoicePreference } from '@/services/defaultVoicePreference';
+import { ProgressData } from '@/components/BreathingGuide/VoiceProgressBar';
 
 const SYSTEM_DEFAULT_ID = 'default';
 
@@ -18,12 +20,16 @@ interface UseVoicePackReturn {
   currentVoicePack: VoicePack | null;
   availableVoicePacks: VoicePackSummary[];
   userDefaultPackId: string | null;
-  systemDefaultId: string; // NEW
+  systemDefaultId: string;
   isLoading: boolean;
   error: string | null;
-  progressMessage: string | null;
 
-  updateVoicePackSpeed: (params: { packId: string; newSpeed: number }) => Promise<void>; // NEW
+  // Progress tracking
+  currentProgress: ProgressData | null;
+  showProgress: boolean;
+
+  defaultVoicePacks: VoicePackSummary[];
+  refreshDefaultVoices: () => Promise<void>;
 
   createVoicePack: (params: {
     name: string;
@@ -41,39 +47,66 @@ interface UseVoicePackReturn {
     phasesToUpdate?: string[];
   }) => Promise<void>;
 
+  updateVoicePackSpeed: (params: {
+    packId: string;
+    newSpeed: number;
+  }) => Promise<void>;
+
   deleteVoicePack: (packId: string) => Promise<void>;
 
-  setAsDefault: (packId: string) => void; // NEW
-  clearDefault: () => void; // NEW
+  setAsDefault: (packId: string) => void;
+  clearDefault: () => void;
 
   refreshVoicePackList: () => Promise<void>;
 
   clearError: () => void;
+  clearProgress: () => void;
 }
 
+/**
+ * Voice Pack Hook with SSE Progress Tracking
+ *
+ * This hook manages:
+ * 1. Voice pack state (current pack, available packs)
+ * 2. Progress state (current progress data, show/hide)
+ * 3. Operations (create, load, update, delete)
+ * 4. SSE progress callbacks
+ *
+ * Key Pattern: Progress Callback
+ * - Service calls onProgress for each SSE update
+ * - Hook updates state with progress data
+ * - Component displays progress bar based on state
+ *
+ * State Flow:
+ * User clicks create â†’ isLoading=true, showProgress=true
+ * â†’ Service starts SSE connection
+ * â†’ onProgress called for each update â†’ currentProgress updated
+ * â†’ Operation completes â†’ isLoading=false, showProgress=false after delay
+ */
 export const useVoicePack = (): UseVoicePackReturn => {
   const [currentVoicePack, setCurrentVoicePack] = useState<VoicePack | null>(null);
   const [availableVoicePacks, setAvailableVoicePacks] = useState<VoicePackSummary[]>([]);
-  const [userDefaultPackId, setUserDefaultPackId] = useState<string | null>(null); // Will be set on mount
+  const [userDefaultPackId, setUserDefaultPackId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [progressMessage, setProgressMessage] = useState<string | null>(null);
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState<boolean>(false);
 
+  // Progress tracking state
+  const [currentProgress, setCurrentProgress] = useState<ProgressData | null>(null);
+  const [showProgress, setShowProgress] = useState<boolean>(false);
   /**
-   * Initialize user default pack ID on client side only
-   */
+ * Default guided voice packs (pre-generated from backend)
+ * These are the system-provided voices like Anulom Vilom guided packs
+ */
+const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([])
+
   useEffect(() => {
-    // Only run in browser
     if (typeof window !== 'undefined') {
       const defaultId = defaultVoicePreference.getUserDefaultVoicePack();
       setUserDefaultPackId(defaultId);
     }
   }, []);
 
-  /**
-   * Refresh voice pack list
-   */
   const refreshVoicePackList = useCallback(async () => {
     try {
       const packs = await voicePackService.listVoicePacks();
@@ -84,89 +117,65 @@ export const useVoicePack = (): UseVoicePackReturn => {
     }
   }, []);
 
-  /**
-   * Auto-load user's preferred default voice pack on mount (CLIENT-SIDE ONLY)
-   */
   useEffect(() => {
     const autoLoadDefaultVoice = async () => {
-      // SSR Safety: Only run in browser
-      if (typeof window === 'undefined') {
-        return;
-      }
-
+      if (typeof window === 'undefined') return;
       if (hasAttemptedAutoLoad) return;
 
       setHasAttemptedAutoLoad(true);
 
       try {
-        console.log('🔍 Checking for default voice pack...');
+        console.log('ðŸ” Auto-loading default voice pack...');
 
-        // Load voice pack list first
         await refreshVoicePackList();
 
-        // Get user's preferred default
         const preferredDefaultId = defaultVoicePreference.getUserDefaultVoicePack();
 
         if (!preferredDefaultId) {
-          console.log('ℹ️ No default voice pack set by user');
+          console.log('â„¹ï¸ No default voice pack set');
           return;
         }
 
-        console.log(`🎯 User's preferred default: ${preferredDefaultId}`);
+        console.log(`ðŸŽ¯ Loading default: ${preferredDefaultId}`);
 
-        // Check if preferred pack exists
-        const packs = await voicePackService.listVoicePacks();
-        const preferredPack = packs.find(p => p.id === preferredDefaultId);
-
-        if (preferredPack) {
-          console.log(`✅ Loading user's default: ${preferredPack.name}`);
-          setProgressMessage(`Loading ${preferredPack.name}...`);
-
-          // Load the preferred pack
-          const pack = await voicePackService.getVoicePack(preferredDefaultId);
-          if (pack) {
-            await voicePackService.preloadVoicePack(pack);
-            await audioService.setVoicePack(pack.id);
-            setCurrentVoicePack(pack);
-
-            console.log('✅ User default voice pack loaded successfully');
-            setProgressMessage(null);
-          }
-        } else {
-          console.warn(`⚠️ User's preferred default (${preferredDefaultId}) not found`);
-
-          // Fallback to system default if available
-          const systemDefault = packs.find(p => p.id === SYSTEM_DEFAULT_ID);
-          if (systemDefault) {
-            console.log('📦 Falling back to system default');
-            const pack = await voicePackService.getVoicePack(SYSTEM_DEFAULT_ID);
-            if (pack) {
-              await voicePackService.preloadVoicePack(pack);
-              await audioService.setVoicePack(pack.id);
-              setCurrentVoicePack(pack);
-            }
-          }
-
-          setProgressMessage(null);
+        const pack = await voicePackService.getVoicePack(preferredDefaultId);
+        if (pack) {
+          await voicePackService.preloadVoicePack(pack);
+          await audioService.setVoicePack(pack.id);
+          setCurrentVoicePack(pack);
+          console.log('âœ… Default voice pack loaded');
         }
       } catch (err) {
         console.error('Failed to auto-load default voice:', err);
-        setProgressMessage(null);
       }
     };
 
     autoLoadDefaultVoice();
   }, [hasAttemptedAutoLoad, refreshVoicePackList]);
 
-  /**
-   * Load voice pack list on mount
-   */
   useEffect(() => {
     refreshVoicePackList();
   }, [refreshVoicePackList]);
 
   /**
-   * Create voice pack
+   * Progress callback handler
+   *
+   * Called by voicePackService for each SSE progress update.
+   * Updates the currentProgress state which triggers re-render
+   * of the progress bar component.
+   *
+   * Learning: Callback Pattern
+   * - Service doesn't know about React state
+   * - Hook provides callback that updates state
+   * - Clean separation between service logic and UI state
+   */
+  const handleProgress = useCallback((progress: ProgressData) => {
+    console.log(`ðŸ“Š Progress update: ${progress.progress.toFixed(1)}%`);
+    setCurrentProgress(progress);
+  }, []);
+
+  /**
+   * Create voice pack with progress tracking
    */
   const createVoicePack = useCallback(async (params: {
     name: string;
@@ -175,43 +184,51 @@ export const useVoicePack = (): UseVoicePackReturn => {
     language?: VoiceLanguage;
     speed?: number;
   }) => {
+    console.log('ðŸŽ¯ Creating voice pack with progress tracking...');
+
     setIsLoading(true);
     setError(null);
-    setProgressMessage('Starting voice pack creation...');
+    setShowProgress(true);
+    setCurrentProgress(null);
 
     try {
+      // Pass progress callback to service
       const voicePack = await voicePackService.createVoicePack({
         name: params.name,
         voiceSample: params.voiceSample,
         instructions: params.instructions,
         language: params.language || 'en',
         speed: params.speed || 1.0,
-        onProgress: (message) => {
-          setProgressMessage(message);
-        },
+        onProgress: handleProgress, // This is the key!
       });
 
-      setProgressMessage('Pre-loading audio files...');
-
-      await voicePackService.preloadVoicePack(voicePack);
-      await audioService.setVoicePack(voicePack.id);
-
-      setCurrentVoicePack(voicePack);
-      setProgressMessage('Voice pack ready!');
+      console.log('âœ… Voice pack created:', voicePack.id);
 
       await refreshVoicePackList();
+      await voicePackService.preloadVoicePack(voicePack);
+      await audioService.setVoicePack(voicePack.id);
+      setCurrentVoicePack(voicePack);
 
-      setTimeout(() => setProgressMessage(null), 2000);
+      // Keep progress visible for 2 seconds after completion
+      setTimeout(() => {
+        setShowProgress(false);
+        setCurrentProgress(null);
+      }, 2000);
 
     } catch (err) {
-      console.error('Voice pack creation failed:', err);
+      console.error('âŒ Voice pack creation failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to create voice pack');
-      setProgressMessage(null);
+
+      // Keep error visible
+      setTimeout(() => {
+        setShowProgress(false);
+      }, 5000);
+
       throw err;
     } finally {
       setIsLoading(false);
     }
-  }, [refreshVoicePackList]);
+  }, [handleProgress, refreshVoicePackList]);
 
   /**
    * Load voice pack
@@ -219,7 +236,6 @@ export const useVoicePack = (): UseVoicePackReturn => {
   const loadVoicePack = useCallback(async (packId: string) => {
     setIsLoading(true);
     setError(null);
-    setProgressMessage('Loading voice pack...');
 
     try {
       const voicePack = await voicePackService.getVoicePack(packId);
@@ -228,20 +244,14 @@ export const useVoicePack = (): UseVoicePackReturn => {
         throw new Error('Voice pack not found');
       }
 
-      setProgressMessage('Pre-loading audio files...');
-
       await voicePackService.preloadVoicePack(voicePack);
       await audioService.setVoicePack(voicePack.id);
 
       setCurrentVoicePack(voicePack);
-      setProgressMessage('Voice pack loaded!');
-
-      setTimeout(() => setProgressMessage(null), 2000);
 
     } catch (err) {
       console.error('Failed to load voice pack:', err);
       setError(err instanceof Error ? err.message : 'Failed to load voice pack');
-      setProgressMessage(null);
       throw err;
     } finally {
       setIsLoading(false);
@@ -249,58 +259,118 @@ export const useVoicePack = (): UseVoicePackReturn => {
   }, []);
 
   /**
-   * Update voice pack
+   * Update voice pack - SIMPLIFIED VERSION
    */
   const updateVoicePack = useCallback(async (params: {
     packId: string;
     instructions: MessagesConfig;
     phasesToUpdate?: string[];
   }) => {
-    const { packId, instructions, phasesToUpdate } = params;
+    console.log('ðŸ”„ Updating voice pack...');
 
     setIsLoading(true);
     setError(null);
-    setProgressMessage('Updating voice pack...');
+    setShowProgress(true);
+    setCurrentProgress(null);
 
     try {
-      const updatedVoicePack = await voicePackService.updateVoicePack({
-        packId,
-        instructions,
-        phasesToUpdate,
-        onProgress: (message) => {
-          setProgressMessage(message);
-        },
+      // Pass progress callback
+      const voicePack = await voicePackService.updateVoicePack({
+        packId: params.packId,
+        instructions: params.instructions,
+        phasesToUpdate: params.phasesToUpdate,
+        onProgress: handleProgress,
       });
 
-      setProgressMessage('Pre-loading updated audio...');
+      console.log('âœ… Voice pack updated');
 
-      await voicePackService.preloadVoicePack(updatedVoicePack);
+      // Refresh list and reload the pack
+      await refreshVoicePackList();
 
-      if (currentVoicePack?.id === packId) {
-        await audioService.setVoicePack(updatedVoicePack.id);
-        setCurrentVoicePack(updatedVoicePack);
+      if (currentVoicePack?.id === params.packId) {
+        await voicePackService.preloadVoicePack(voicePack);
+        await audioService.setVoicePack(voicePack.id);
+        setCurrentVoicePack(voicePack);
       }
 
-      setProgressMessage('Voice pack updated!');
-
-      setTimeout(() => setProgressMessage(null), 2000);
+      // Keep progress visible for 2 seconds
+      setTimeout(() => {
+        setShowProgress(false);
+        setCurrentProgress(null);
+      }, 2000);
 
     } catch (err) {
-      console.error('Voice pack update failed:', err);
+      console.error('âŒ Update failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to update voice pack');
-      setProgressMessage(null);
+
+      setTimeout(() => {
+        setShowProgress(false);
+      }, 5000);
+
       throw err;
     } finally {
       setIsLoading(false);
     }
-  }, [currentVoicePack]);
+  }, [handleProgress, currentVoicePack, refreshVoicePackList]);
+
+  /**
+   * Update voice pack speed with progress tracking
+   */
+  const updateVoicePackSpeed = useCallback(async (params: {
+    packId: string;
+    newSpeed: number;
+  }) => {
+    console.log('ðŸŽšï¸ Updating speed with progress tracking...');
+
+    setIsLoading(true);
+    setError(null);
+    setShowProgress(true);
+    setCurrentProgress(null);
+
+    try {
+      // Pass progress callback
+      const voicePack = await voicePackService.updateVoicePackSpeed({
+        packId: params.packId,
+        newSpeed: params.newSpeed,
+        onProgress: handleProgress,
+      });
+
+      console.log('âœ… Speed updated');
+
+      await refreshVoicePackList();
+
+      if (currentVoicePack?.id === params.packId) {
+        await voicePackService.preloadVoicePack(voicePack);
+        await audioService.setVoicePack(voicePack.id);
+        setCurrentVoicePack(voicePack);
+      }
+
+      // Keep progress visible for 2 seconds
+      setTimeout(() => {
+        setShowProgress(false);
+        setCurrentProgress(null);
+      }, 2000);
+
+    } catch (err) {
+      console.error('âŒ Speed update failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update speed');
+
+      setTimeout(() => {
+        setShowProgress(false);
+      }, 5000);
+
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleProgress, currentVoicePack, refreshVoicePackList]);
 
   /**
    * Delete voice pack
    */
   const deleteVoicePack = useCallback(async (packId: string) => {
     if (packId === SYSTEM_DEFAULT_ID) {
-      setError('Cannot delete system default voice pack');
+      setError('Cannot delete system default');
       return;
     }
 
@@ -314,19 +384,15 @@ export const useVoicePack = (): UseVoicePackReturn => {
         throw new Error('Failed to delete voice pack');
       }
 
-      // If deleted pack was user's default, clear preference
       if (defaultVoicePreference.isUserDefault(packId)) {
-        console.log('⚠️ Deleted pack was user default, clearing preference');
         defaultVoicePreference.clearUserDefaultVoicePack();
         setUserDefaultPackId(defaultVoicePreference.getUserDefaultVoicePack());
       }
 
-      // If deleted pack was currently loaded, load default
       if (currentVoicePack?.id === packId) {
         setCurrentVoicePack(null);
         audioService.clearVoicePack();
 
-        // Try to auto-load system default
         try {
           const defaultPack = await voicePackService.getVoicePack(SYSTEM_DEFAULT_ID);
           if (defaultPack) {
@@ -343,120 +409,110 @@ export const useVoicePack = (): UseVoicePackReturn => {
 
     } catch (err) {
       console.error('Failed to delete voice pack:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete voice pack');
+      setError(err instanceof Error ? err.message : 'Failed to delete');
       throw err;
     } finally {
       setIsLoading(false);
     }
   }, [currentVoicePack, refreshVoicePackList]);
 
-  /**
-   * Set a voice pack as user's default (NEW)
-   */
   const setAsDefault = useCallback((packId: string) => {
-    // SSR Safety: Only run in browser
-    if (typeof window === 'undefined') {
-      console.warn('Cannot set default in SSR environment');
-      return;
-    }
+    if (typeof window === 'undefined') return;
 
     try {
       defaultVoicePreference.setUserDefaultVoicePack(packId);
       setUserDefaultPackId(packId);
-      console.log(`✅ Set ${packId} as default voice pack`);
+      console.log(`âœ… Set ${packId} as default`);
     } catch (err) {
       console.error('Failed to set default:', err);
-      setError('Failed to set default voice pack');
+      setError('Failed to set default');
     }
   }, []);
 
-  /**
-   * Clear user's default preference (NEW)
-   */
   const clearDefault = useCallback(() => {
-    // SSR Safety: Only run in browser
-    if (typeof window === 'undefined') {
-      console.warn('Cannot clear default in SSR environment');
-      return;
-    }
+    if (typeof window === 'undefined') return;
 
     try {
       defaultVoicePreference.clearUserDefaultVoicePack();
       setUserDefaultPackId(defaultVoicePreference.getUserDefaultVoicePack());
-      console.log('✅ Cleared default voice pack preference');
+      console.log('âœ… Cleared default');
     } catch (err) {
       console.error('Failed to clear default:', err);
     }
   }, []);
 
-  /**
-   * Clear error
-   */
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
-   /**
-   * Update voice pack speed (NEW)
+  const clearProgress = useCallback(() => {
+    setShowProgress(false);
+    setCurrentProgress(null);
+  }, []);
+
+  /**
+   * Fetch default guided voice packs from backend
+   *
+   * These are pre-generated voice packs (e.g., Anulom Vilom guided packs)
+   * that come from the system and are available to all users.
+   *
+   * Now uses voicePackService.listVoicePacks({ category: 'default' })
+   * which correctly routes to the backend URL.
+   *
+   * Key Learning: Always use service layer for API calls instead of direct fetch
+   * - Service layer handles backend URL configuration
+   * - Centralizes API logic for easier maintenance
+   * - Provides consistent error handling
+   * - Makes testing easier with mock services
    */
-  const updateVoicePackSpeed = useCallback(async (params: {
-    packId: string;
-    newSpeed: number;
-  }) => {
-    const { packId, newSpeed } = params;
-
-    setIsLoading(true);
-    setError(null);
-    setProgressMessage('Regenerating audio at new speed...');
-
+  const fetchDefaultVoices = useCallback(async () => {
     try {
-      const updatedVoicePack = await voicePackService.updateVoicePackSpeed({
-        packId,
-        newSpeed,
-        onProgress: (message) => {
-          setProgressMessage(message);
-        },
-      });
+      // Use voicePackService instead of direct fetch - this correctly uses backend URL
+      const defaultPacks = await voicePackService.listVoicePacks({ category: 'default' });
 
-      setProgressMessage('Pre-loading updated audio...');
+      // Filter only default/guided packs (extra safety check)
+      const guidedPacks = defaultPacks.filter(
+        (pack) => pack.id.startsWith('default_') || pack.is_default === true
+      );
 
-      await voicePackService.preloadVoicePack(updatedVoicePack);
-
-      if (currentVoicePack?.id === packId) {
-        await audioService.setVoicePack(updatedVoicePack.id);
-        setCurrentVoicePack(updatedVoicePack);
-      }
-
-      setProgressMessage('Voice pack speed updated!');
-
-      setTimeout(() => setProgressMessage(null), 2000);
-
+      setDefaultVoicePacks(guidedPacks);
+      console.log(`✅ Loaded ${guidedPacks.length} default voice packs`);
     } catch (err) {
-      console.error('Voice pack speed update failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update voice pack speed');
-      setProgressMessage(null);
-      throw err;
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching default voices:', err);
+      // Don't show error to user - default voices not loading shouldn't break app
+      setDefaultVoicePacks([]);
     }
-  }, [currentVoicePack]);
+  }, []);
+
+useEffect(() => {
+  // Fetch default voices on mount
+  fetchDefaultVoices()
+
+  // Optional: Refresh default voices every 5 minutes
+  const interval = setInterval(fetchDefaultVoices, 5 * 60 * 1000)
+  return () => clearInterval(interval)
+}, [fetchDefaultVoices])
 
   return {
     currentVoicePack,
     availableVoicePacks,
-    userDefaultPackId, // NEW
-    systemDefaultId: SYSTEM_DEFAULT_ID, // NEW
+    userDefaultPackId,
+    systemDefaultId: SYSTEM_DEFAULT_ID,
     isLoading,
     error,
-    progressMessage,
-    updateVoicePackSpeed, // NEW
+    currentProgress,
+    showProgress,
+    defaultVoicePacks,
+  refreshDefaultVoices: fetchDefaultVoices,
     createVoicePack,
     loadVoicePack,
     updateVoicePack,
+    updateVoicePackSpeed,
     deleteVoicePack,
-    setAsDefault, // NEW
-    clearDefault, // NEW
+    setAsDefault,
+    clearDefault,
     refreshVoicePackList,
     clearError,
+    clearProgress,
   };
 };

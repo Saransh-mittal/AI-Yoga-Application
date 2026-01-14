@@ -1,6 +1,13 @@
 // components/BreathingGuide/ChatPanel.tsx
-// COMPLETE FIXED VERSION - Input Border + Full Model Name on Mobile
+// Chat Panel - COMPLETE FIX WITH LOADING STATES
 // File Location: components/BreathingGuide/ChatPanel.tsx (REPLACE ENTIRE FILE)
+//
+// FIXES:
+// ✅ Voice preview always shows instructions
+// ✅ Loading state immediately after Apply click
+// ✅ Loading state after voice selection
+// ✅ Smooth transitions between all states
+// ✅ No empty/broken states
 
 'use client'
 
@@ -22,11 +29,7 @@ import {
   Zap,
   Sliders,
   Volume2,
-  Timer,
-  Bell,
-  Gauge,
-  Play,
-  Clock,
+  ChevronRight,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import {
@@ -41,8 +44,9 @@ import {
 } from '@/models/types'
 import { AI_MODEL_INFO } from '@/models/constants'
 import { VoiceSelectionModal } from './VoiceSelectionModal'
-import { VoicePackSummary } from '@/services/voicePackService'
 import { ClarificationModal } from './ClarificationModal'
+import { VoiceProgressBar, ProgressData } from './VoiceProgressBar'
+import { VoicePackSummary } from '@/services/voicePackService'
 
 interface ChatPanelProps {
   messages: Message[]
@@ -56,10 +60,16 @@ interface ChatPanelProps {
   availableVoicePacks: VoicePackSummary[]
   showVoiceSelection: boolean
   isApplyingVoice: boolean
+
+  // SSE Progress Props
+  currentProgress: ProgressData | null
+  showProgress: boolean
+
   pendingClarification?: {
     request: ClarificationRequest
     messageId: string
   } | null
+
   onClarificationChoice?: (optionId: string) => void
   onCancelClarification?: () => void
   onInputChange: (value: string) => void
@@ -82,9 +92,6 @@ interface QuickAction {
   prompt: string
 }
 
-/**
- * FIXED Portal Dropdown - Positioned with gap above button
- */
 const ModelDropdown: React.FC<{
   isOpen: boolean
   buttonRef: React.RefObject<HTMLButtonElement | null>
@@ -102,11 +109,10 @@ const ModelDropdown: React.FC<{
   useEffect(() => {
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
-      // Calculate dropdown height (approximate)
-      const dropdownHeight = Object.keys(AI_MODEL_INFO).length * 60 // ~60px per item
+      const dropdownHeight = Object.keys(AI_MODEL_INFO).length * 60
 
       setPosition({
-        top: rect.top - dropdownHeight - 22, // Position above with 12px gap
+        top: rect.top - dropdownHeight - 22,
         left: rect.left,
         width: rect.width,
       })
@@ -117,10 +123,8 @@ const ModelDropdown: React.FC<{
 
   return createPortal(
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 z-[9998]" onClick={onClose} />
 
-      {/* Dropdown - IMPROVED DESIGN */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -178,6 +182,14 @@ const ModelDropdown: React.FC<{
   )
 }
 
+// ✅ Helper to format phase name nicely
+const formatPhaseName = (phase: string): string => {
+  return phase
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 export const ChatPanel: React.FC<ChatPanelProps> = ({
   messages,
   isThinking,
@@ -190,6 +202,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   availableVoicePacks,
   showVoiceSelection,
   isApplyingVoice,
+  currentProgress,
+  showProgress,
   pendingClarification,
   onClarificationChoice,
   onCancelClarification,
@@ -212,6 +226,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [voiceFile, setVoiceFile] = useState<File | null>(null)
   const [voiceName, setVoiceName] = useState('')
 
+  // ✅ Track which preview was just applied (for success state)
+  const [appliedPreviewId, setAppliedPreviewId] = useState<string | null>(null)
+
+  // ✅ Track preview instructions expansion
+  const [expandedPreviews, setExpandedPreviews] = useState<Set<string>>(
+    new Set(),
+  )
+
   const isCentered = messages.length === 0 && !isThinking
 
   useEffect(() => {
@@ -221,6 +243,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  // ✅ Auto-expand preview when created
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1]
+    if (lastMessage?.previewId && lastMessage.preview?.type === 'voice') {
+      setExpandedPreviews(prev => new Set(prev).add(lastMessage.previewId!))
+    }
+  }, [messages])
+
+  // ✅ Clear applied state after completion
+  useEffect(() => {
+    if (appliedPreviewId && currentProgress?.status === 'completed') {
+      const timer = setTimeout(() => {
+        setAppliedPreviewId(null)
+      }, 5000) // Show success for 5 seconds
+
+      return () => clearTimeout(timer)
+    }
+  }, [appliedPreviewId, currentProgress])
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -254,6 +295,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     inputRef.current?.focus()
   }
 
+  const handleApplyPreview = (
+    preview: VoicePreview | SettingsPreview,
+    previewId: string,
+  ) => {
+    setAppliedPreviewId(previewId)
+    onApplyPreview(preview, previewId)
+  }
+
+  const togglePreviewExpansion = (previewId: string) => {
+    setExpandedPreviews(prev => {
+      const next = new Set(prev)
+      if (next.has(previewId)) {
+        next.delete(previewId)
+      } else {
+        next.add(previewId)
+      }
+      return next
+    })
+  }
+
   const quickActions: QuickAction[] = [
     {
       id: 'voice',
@@ -281,17 +342,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     },
   ]
 
-  // FIXED Input Area - Compact design, no overflow clipping
   const renderInputArea = () => (
     <motion.div layout className="w-full max-w-3xl mx-auto px-2 md:px-6 py-1">
-      {/* Extra wrapper to ensure border visibility */}
       <div className="p-1">
         <div className="relative">
-          {/* Input Container - Purple border fully visible */}
           <div className="bg-white dark:bg-gray-800 border-2 border-purple-500 dark:border-purple-600 rounded-2xl shadow-xl overflow-hidden">
-            {/* Top Toolbar - Rounded top to match parent border */}
             <div className="flex items-center gap-2 px-2 md:px-4 py-1.5 md:py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-t-[14px]">
-              {/* Voice Upload */}
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
@@ -302,7 +358,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 <Upload size={16} className="md:w-[18px] md:h-[18px]" />
               </motion.button>
 
-              {/* Model Selector - Full name on all screens */}
               <motion.button
                 ref={modelButtonRef}
                 whileHover={{ scale: 1.02 }}
@@ -325,7 +380,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
               <div className="flex-1" />
 
-              {/* Help Button */}
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
@@ -337,7 +391,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               </motion.button>
             </div>
 
-            {/* Input Field */}
             <div className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-3">
               <input
                 ref={inputRef}
@@ -365,7 +418,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </div>
           </div>
 
-          {/* Model Info */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -380,13 +432,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   return (
     <>
-      {/* Main container - overflow visible */}
       <div
         className="h-full flex flex-col bg-white dark:bg-gray-900"
         style={{ overflow: 'visible' }}
       >
         {isCentered ? (
-          // CENTERED LAYOUT - Extra padding for borders
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -441,7 +491,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             {renderInputArea()}
           </motion.div>
         ) : (
-          // BOTTOM LAYOUT
           <>
             <div className="flex-1 overflow-y-auto px-3 md:px-6 py-4 md:py-6 pb-[180px] md:pb-6">
               <div className="space-y-3 md:space-y-4 pb-4 max-w-3xl mx-auto">
@@ -507,6 +556,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                         </motion.div>
                       </div>
 
+                      {/* Settings Preview */}
                       {msg.preview &&
                         msg.preview.type === 'settings' &&
                         (() => {
@@ -558,7 +608,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                                 onClick={() =>
-                                  onApplyPreview(msg.preview!, msg.previewId!)
+                                  handleApplyPreview(
+                                    msg.preview!,
+                                    msg.previewId!,
+                                  )
                                 }
                                 className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
                               >
@@ -569,29 +622,201 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                           )
                         })()}
 
-                      {msg.preview && msg.preview.type === 'voice' && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="mt-2 bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-200 dark:border-purple-700 rounded-xl p-3 space-y-2"
-                        >
-                          <div className="font-semibold text-xs flex items-center gap-2 text-purple-900 dark:text-purple-200">
-                            <Mic size={16} />
-                            Voice Preview
-                          </div>
-                          <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={() =>
-                              onApplyPreview(msg.preview!, msg.previewId!)
-                            }
-                            className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-                          >
-                            <Check size={16} />
-                            Apply Changes
-                          </motion.button>
-                        </motion.div>
-                      )}
+                      {/* ✅ COMPLETE Voice Preview - Always shows instructions */}
+                      {msg.preview &&
+                        msg.preview.type === 'voice' &&
+                        (() => {
+                          const voicePreview = msg.preview as VoicePreview
+                          const instructions = voicePreview.instructions
+                          const phases = Object.entries(instructions) as [
+                            string,
+                            string[],
+                          ][]
+                          const isExpanded = expandedPreviews.has(
+                            msg.previewId!,
+                          )
+                          const isProcessing =
+                            isApplyingVoice &&
+                            appliedPreviewId === msg.previewId
+                          const isCompleted =
+                            appliedPreviewId === msg.previewId &&
+                            currentProgress?.status === 'completed'
+
+                          return (
+                            <motion.div
+                              layout
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="mt-2 md:mt-3"
+                            >
+                              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border-2 border-purple-200 dark:border-purple-700 rounded-xl overflow-hidden shadow-lg">
+                                {/* Header - Always visible */}
+                                <div className="p-3 md:p-4 border-b border-purple-200 dark:border-purple-700">
+                                  <div className="flex items-center justify-between">
+                                    <div className="font-semibold text-xs md:text-sm flex items-center gap-2 text-purple-900 dark:text-purple-200">
+                                      <Mic size={16} />
+                                      Voice Preview
+                                    </div>
+                                    {isCompleted && (
+                                      <motion.div
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400"
+                                      >
+                                        <Check size={14} />
+                                        Applied!
+                                      </motion.div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* ✅ INSTRUCTIONS - Always visible, collapsible during processing */}
+                                <AnimatePresence>
+                                  {(!isProcessing || isExpanded) && (
+                                    <motion.div
+                                      initial={{ opacity: 1, height: 'auto' }}
+                                      exit={{ opacity: 0, height: 0 }}
+                                      transition={{ duration: 0.2 }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="p-3 md:p-4 space-y-2 max-h-[300px] overflow-y-auto">
+                                        {phases.map(([phase, variants]) => (
+                                          <div
+                                            key={phase}
+                                            className="bg-white dark:bg-gray-800 rounded-lg p-2.5 border border-purple-200 dark:border-purple-700"
+                                          >
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                              <Volume2
+                                                size={14}
+                                                className="text-purple-600 dark:text-purple-400"
+                                              />
+                                              <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">
+                                                {formatPhaseName(phase)}
+                                              </span>
+                                            </div>
+                                            <div className="space-y-1">
+                                              {variants.map(
+                                                (
+                                                  variant: string,
+                                                  idx: number,
+                                                ) => (
+                                                  <div
+                                                    key={idx}
+                                                    className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-300"
+                                                  >
+                                                    <ChevronRight
+                                                      size={12}
+                                                      className="mt-0.5 text-purple-500 shrink-0"
+                                                    />
+                                                    <span className="italic">
+                                                      "{variant}"
+                                                    </span>
+                                                  </div>
+                                                ),
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+
+                                {/* ✅ PROGRESS AREA - Shows during processing */}
+                                {isProcessing &&
+                                  showProgress &&
+                                  currentProgress && (
+                                    <motion.div
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: 'auto' }}
+                                      className="px-3 md:px-4 pb-3 md:pb-4"
+                                    >
+                                      <VoiceProgressBar
+                                        progress={currentProgress}
+                                        language={currentLanguage}
+                                        operationType="update"
+                                        compact={false}
+                                      />
+
+                                      {/* Toggle button to show/hide instructions during progress */}
+                                      {!isExpanded && (
+                                        <motion.button
+                                          whileHover={{ scale: 1.02 }}
+                                          whileTap={{ scale: 0.98 }}
+                                          onClick={() =>
+                                            togglePreviewExpansion(
+                                              msg.previewId!,
+                                            )
+                                          }
+                                          className="mt-2 w-full text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 flex items-center justify-center gap-1"
+                                        >
+                                          <ChevronDown size={14} />
+                                          Show instructions
+                                        </motion.button>
+                                      )}
+                                    </motion.div>
+                                  )}
+
+                                {/* ✅ LOADING STATE - Before progress starts */}
+                                {isProcessing && !showProgress && (
+                                  <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className="p-3 md:p-4 bg-purple-50/50 dark:bg-purple-900/10"
+                                  >
+                                    <div className="flex items-center justify-center gap-2 text-purple-600 dark:text-purple-400">
+                                      <Loader2
+                                        size={16}
+                                        className="animate-spin"
+                                      />
+                                      <span className="text-sm">
+                                        Initializing voice update...
+                                      </span>
+                                    </div>
+                                  </motion.div>
+                                )}
+
+                                {/* Apply Button / Success Area */}
+                                <div className="p-3 md:p-4 bg-purple-50/50 dark:bg-purple-900/10">
+                                  {!isProcessing && !isCompleted ? (
+                                    // Apply button when ready
+                                    <motion.button
+                                      layout
+                                      whileHover={{ scale: 1.02 }}
+                                      whileTap={{ scale: 0.98 }}
+                                      onClick={() =>
+                                        handleApplyPreview(
+                                          msg.preview!,
+                                          msg.previewId!,
+                                        )
+                                      }
+                                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md flex items-center justify-center gap-2"
+                                    >
+                                      <Check size={16} />
+                                      Apply Voice Changes
+                                    </motion.button>
+                                  ) : isCompleted ? (
+                                    // Success message
+                                    <motion.div
+                                      initial={{ opacity: 0, scale: 0.9 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-3 flex items-center gap-2"
+                                    >
+                                      <Check
+                                        size={16}
+                                        className="text-green-600 dark:text-green-400 shrink-0"
+                                      />
+                                      <span className="text-sm text-green-800 dark:text-green-200">
+                                        ✅ Changes applied! Your new voice
+                                        guidance is now active.
+                                      </span>
+                                    </motion.div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )
+                        })()}
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -602,7 +827,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                     animate={{ opacity: 1 }}
                     className="flex justify-start"
                   >
-                    <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded-2xl shadow-md">
+                    <div className="bg-gray-100 dark:bg-gray-800 p-3 md:p-4 rounded-2xl shadow-md">
                       <div className="flex items-center gap-2 text-purple-600">
                         <motion.div
                           animate={{ rotate: 360 }}
@@ -624,7 +849,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               </div>
             </div>
 
-            {/* Bottom Input - Fixed at bottom on mobile, above bottom nav */}
             <div
               className="fixed md:relative bottom-16 md:bottom-0 left-0 right-0 md:shrink-0 p-2 md:p-6 pt-2 md:pt-6 pb-3 md:pb-8 bg-white dark:bg-gray-900 z-30 border-t md:border-t-0 border-gray-200 dark:border-gray-800"
               style={{ overflow: 'visible' }}
@@ -635,7 +859,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         )}
       </div>
 
-      {/* Portal Model Dropdown */}
       <ModelDropdown
         isOpen={showModelSelector}
         buttonRef={modelButtonRef}
@@ -644,12 +867,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         onClose={() => setShowModelSelector(false)}
       />
 
-      {/* Modals */}
       <VoiceSelectionModal
         isOpen={showVoiceSelection}
         currentVoicePack={currentVoicePack}
         availableVoicePacks={availableVoicePacks}
         isProcessing={isApplyingVoice}
+        currentProgress={currentProgress}
+        showProgress={showProgress}
+        currentLanguage={currentLanguage}
         onSelect={onVoicePackSelected}
         onClose={onCancelVoiceSelection}
       />
@@ -665,6 +890,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         }}
       />
 
+      {/* Help Modal */}
       <AnimatePresence>
         {showHelp && (
           <>
@@ -696,6 +922,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               <div className="space-y-3 text-sm">
                 <p>• "make it shorter" - Concise instructions</p>
                 <p>• "5 minute session" - Duration change</p>
+                <p className="text-purple-600 dark:text-purple-400">
+                  💡 Voice changes show real-time progress!
+                </p>
               </div>
               <motion.button
                 whileHover={{ scale: 1.02 }}
@@ -710,6 +939,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         )}
       </AnimatePresence>
 
+      {/* Voice Upload Modal */}
       <AnimatePresence>
         {showVoiceUpload && (
           <>

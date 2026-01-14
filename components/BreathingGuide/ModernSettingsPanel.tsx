@@ -220,12 +220,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   animate={{ scale: 1, opacity: 1 }}
                   className="px-3 py-1 bg-purple-500 text-white rounded-full text-sm font-bold"
                 >
-                  {settings.holdDuration}s
+                  {settings.holdDuration === 0 ? 'Skip' : `${settings.holdDuration}s`}
                 </motion.span>
               </div>
               <input
                 type="range"
-                min="2"
+                min="0"
                 max="15"
                 value={settings.holdDuration}
                 onChange={e =>
@@ -272,10 +272,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Inhale {settings.inhaleDuration}s
                 </span>
                 <span className="text-gray-400">→</span>
-                <span className="text-purple-600 dark:text-purple-400 font-medium">
-                  Hold {settings.holdDuration}s
-                </span>
-                <span className="text-gray-400">→</span>
+                {settings.holdDuration > 0 && (
+                  <>
+                    <span className="text-purple-600 dark:text-purple-400 font-medium">
+                      Hold {settings.holdDuration}s
+                    </span>
+                    <span className="text-gray-400">→</span>
+                  </>
+                )}
                 <span className="text-green-600 dark:text-green-400 font-medium">
                   Exhale {settings.exhaleDuration}s
                 </span>

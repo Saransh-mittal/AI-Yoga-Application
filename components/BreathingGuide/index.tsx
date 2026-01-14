@@ -1,11 +1,16 @@
 // components/BreathingGuide/index.tsx
-// Redesigned main component with mobile-first navigation
-// Location: components/BreathingGuide/index.tsx (REPLACE EXISTING)
+// Complete implementation with SSE progress tracking
+// File Location: components/BreathingGuide/index.tsx (REPLACE ENTIRE FILE)
+//
+// CHANGES:
+// - Added currentProgress and showProgress extraction from useVoicePack
+// - Pass progress props to ChatPanel for real-time SSE updates
+// - Proper integration with voice pack updates from chat
 
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   BreathingSettings,
   MessagesConfig,
@@ -17,16 +22,12 @@ import { useBreathing } from '@/hooks/useBreathing'
 import { useChat } from '@/hooks/useChat'
 import { useVoicePack } from '@/hooks/useVoicePack'
 
-// New Components
+// Components
 import { BottomNavigation } from './BottomNavigation'
 import { OnboardingTour } from './OnboardingTour'
 import { QuickSettings } from './QuickSettings'
 import { EnhancedBreathingDisplay } from './EnhancedBreathingDisplay'
-
-// Modern Components
 import { SettingsPanel } from './ModernSettingsPanel'
-
-// Existing Components (ChatPanel has more features, keep it for now)
 import { ChatPanel } from './ChatPanel'
 import { VoicePackManager } from './VoicePackManager'
 import { FloatingParticles } from '@/components/FloatingParticles'
@@ -34,6 +35,8 @@ import { FloatingParticles } from '@/components/FloatingParticles'
 type NavigationTab = 'breathe' | 'guide' | 'settings' | 'voice'
 
 export default function BreathingGuide() {
+  console.log('ðŸ”µ BreathingGuide: Component rendering')
+
   // Navigation State
   const [activeTab, setActiveTab] = useState<NavigationTab>('breathe')
   const [currentLanguage, setCurrentLanguage] = useState<VoiceLanguage>('en')
@@ -60,23 +63,45 @@ export default function BreathingGuide() {
 
   // Update messages when language changes
   useEffect(() => {
+    console.log('ðŸŒ Language changed to:', currentLanguage)
     setCustomMessages(getDefaultMessages(currentLanguage))
   }, [currentLanguage])
 
-  // Voice Pack Hook
+  // 🎯 Voice Pack Hook with SSE progress tracking
   const {
     currentVoicePack,
     availableVoicePacks,
-    updateVoicePack,
     updateVoicePackSpeed,
+    updateVoicePack,
     createVoicePack,
     isLoading: isVoicePackLoading,
+    // âœ… CRITICAL: Extract progress props for ChatPanel
+    currentProgress,
+    showProgress,
   } = useVoicePack()
+
+  // âœ… CRITICAL: Sync customMessages with currentVoicePack instructions
+  // When a voice pack is selected, use its stored instructions from metadata instead of defaults
+  // This ensures the AI has the ACTUAL current state when suggesting changes
+  // Flow: Voice pack loaded â†' instructions extracted â†' customMessages updated â†' passed to API
+  // NOTE: This useEffect comes AFTER useVoicePack() hook so currentVoicePack is properly declared
+  useEffect(() => {
+    if (currentVoicePack?.instructions) {
+      console.log(
+        'ðŸŽ¤ Syncing customMessages from voice pack:',
+        currentVoicePack.id,
+      )
+      setCustomMessages(currentVoicePack.instructions)
+    } else {
+      console.log('ðŸ"" No voice pack selected, using default instructions')
+      setCustomMessages(getDefaultMessages(currentLanguage))
+    }
+  }, [currentVoicePack?.id, currentLanguage])
 
   // Breathing Hook
   const { state, toggleBreathing, reset } = useBreathing(settings)
 
-  // Chat Hook
+  // Chat Hook with voice pack integration
   const {
     messages,
     isThinking,
@@ -92,10 +117,17 @@ export default function BreathingGuide() {
     customMessages,
     settings,
     aiModel,
+    // âœ… Voice update handler with SSE progress tracking
     async (instructions, packId, onProgress) => {
+      console.log('ðŸŽ¤ Chat: Applying voice changes to pack:', packId)
+      console.log('ðŸ“ New instructions:', instructions)
+
       setCustomMessages(instructions)
+
       try {
-        onProgress('Regenerating audio...')
+        onProgress('Analyzing changes...')
+
+        // Determine which phases changed
         const changedPhases: string[] = []
         for (const key of Object.keys(instructions)) {
           if (
@@ -105,50 +137,77 @@ export default function BreathingGuide() {
             changedPhases.push(key)
           }
         }
+
+        console.log(
+          'ðŸ”„ Phases to update:',
+          changedPhases.length > 0 ? changedPhases : 'all',
+        )
+        onProgress('Regenerating audio with new instructions...')
+
+        // âœ… CRITICAL: Use updateVoicePack with SSE progress
+        // This will automatically trigger progress updates via the hook
         await updateVoicePack({
           packId,
           instructions,
           phasesToUpdate: changedPhases.length > 0 ? changedPhases : undefined,
         })
+
+        console.log('âœ… Chat: Voice pack updated successfully')
         onProgress('Updated successfully!')
       } catch (error) {
-        console.error('Failed to update voice pack:', error)
+        console.error('âŒ Chat: Failed to update voice pack:', error)
         onProgress('Warning: Instructions updated but regeneration failed')
+        throw error
       }
     },
+    // âœ… Settings update handler with speed support
     partialSettings => {
+      console.log('âš™ï¸ Chat: Applying settings changes:', partialSettings)
+
+      // Handle voice speed changes with SSE progress
       if (
         partialSettings.voiceSpeed !== undefined &&
         currentVoicePack &&
         partialSettings.voiceSpeed !== currentVoicePack.speed
       ) {
         const newSpeed = partialSettings.voiceSpeed
+        console.log(
+          `ðŸŽšï¸ Speed change requested: ${currentVoicePack.speed}x â†’ ${newSpeed}x`,
+        )
+
+        // âœ… CRITICAL: This triggers SSE progress automatically
         updateVoicePackSpeed({
           packId: currentVoicePack.id,
           newSpeed,
         }).catch(error => {
-          console.error('Failed to update voice pack speed:', error)
+          console.error('âŒ Chat: Failed to update voice pack speed:', error)
         })
       }
+
       setSettings(prev => ({ ...prev, ...partialSettings }))
+      console.log('âœ… Chat: Settings applied')
     },
   )
 
   const handleSettingsChange = (newSettings: Partial<BreathingSettings>) => {
+    console.log('âš™ï¸ Settings: Manual change:', newSettings)
     setSettings(prev => ({ ...prev, ...newSettings }))
   }
 
   const handleSendMessage = () => {
     if (inputMessage.trim() && !isThinking) {
+      console.log('ðŸ’¬ Chat: Sending message:', inputMessage)
       sendMessage(inputMessage)
       setInputMessage('')
     }
   }
 
   const handleVoicePackLoaded = () => {
+    console.log('ðŸŽ¤ Voice pack loaded, checking language')
     if (currentVoicePack?.language) {
       const packLanguage = currentVoicePack.language as VoiceLanguage
       if (packLanguage === 'en' || packLanguage === 'hi') {
+        console.log('ðŸŒ Setting language from voice pack:', packLanguage)
         setCurrentLanguage(packLanguage)
       }
     }
@@ -160,7 +219,6 @@ export default function BreathingGuide() {
       case 'breathe':
         return (
           <div className="flex flex-col h-full pt-4 md:pt-0 pb-16 md:pb-0">
-            {/* Quick Settings Bar */}
             <div className="flex justify-center pb-2 px-4 shrink-0">
               <QuickSettings
                 settings={settings}
@@ -169,7 +227,6 @@ export default function BreathingGuide() {
               />
             </div>
 
-            {/* Breathing Display - scrollable if needed */}
             <div className="flex-1 flex items-center justify-center px-4 overflow-y-auto overflow-x-hidden">
               <EnhancedBreathingDisplay
                 state={state}
@@ -182,6 +239,11 @@ export default function BreathingGuide() {
         )
 
       case 'guide':
+        console.log('ðŸŽ¨ Rendering ChatPanel with progress:', {
+          showProgress,
+          hasProgress: !!currentProgress,
+        })
+
         return (
           <div className="h-full pb-16 md:pb-0">
             <ChatPanel
@@ -200,7 +262,10 @@ export default function BreathingGuide() {
               availableVoicePacks={availableVoicePacks}
               showVoiceSelection={showVoiceSelection}
               isApplyingVoice={isVoicePackLoading}
+              currentProgress={currentProgress}
+              showProgress={showProgress}
               pendingClarification={pendingClarification}
+              // Handlers
               onClarificationChoice={handleClarificationChoice}
               onCancelClarification={cancelClarification}
               onInputChange={setInputMessage}
@@ -210,7 +275,9 @@ export default function BreathingGuide() {
               onVoicePackSelected={handleVoicePackSelected}
               onCancelVoiceSelection={cancelVoiceSelection}
               onVoiceUpload={async (file, name) => {
+                console.log('ðŸ“¤ Chat: Voice upload requested:', name)
                 try {
+                  // âœ… CRITICAL: This triggers SSE progress automatically
                   await createVoicePack({
                     name,
                     voiceSample: file,
@@ -218,9 +285,10 @@ export default function BreathingGuide() {
                     language: currentLanguage,
                     speed: settings.voiceSpeed,
                   })
+                  console.log('âœ… Chat: Voice pack created successfully')
                   handleVoicePackLoaded()
                 } catch (error) {
-                  console.error('Failed to create voice pack:', error)
+                  console.error('âŒ Chat: Failed to create voice pack:', error)
                 }
               }}
               onClose={() => setActiveTab('breathe')}
@@ -245,6 +313,7 @@ export default function BreathingGuide() {
         )
 
       case 'voice':
+        console.log('ðŸŽ¨ Rendering VoicePackManager')
         return (
           <div className="h-full overflow-y-auto px-4 py-6 pb-20 md:pb-6">
             <div className="max-w-2xl mx-auto">
@@ -271,14 +340,11 @@ export default function BreathingGuide() {
 
   return (
     <>
-      {/* Onboarding Tour */}
       <OnboardingTour />
 
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-teal-50 dark:from-gray-900 dark:via-purple-950/20 dark:to-indigo-950/20 relative overflow-hidden">
-        {/* Floating Particles */}
         <FloatingParticles />
 
-        {/* Decorative Gradients */}
         <motion.div
           animate={{
             x: [0, 50, -50, 0],
@@ -306,9 +372,7 @@ export default function BreathingGuide() {
           className="absolute bottom-20 right-20 w-96 h-96 bg-blue-300/20 rounded-full blur-3xl pointer-events-none"
         />
 
-        {/* Main Content Container */}
         <div className="relative z-10 h-screen flex flex-col max-h-screen">
-          {/* Header (Desktop) */}
           <motion.header
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -329,19 +393,18 @@ export default function BreathingGuide() {
                   }}
                   className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center text-2xl shadow-lg"
                 >
-                  🧘
+                  ðŸ§˜
                 </motion.div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
                     AI Yoga Guide
                   </h1>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Anulom Vilom • Alternate Nostril Breathing
+                    Anulom Vilom â€¢ Alternate Nostril Breathing
                   </p>
                 </div>
               </div>
 
-              {/* Current Voice Pack Badge */}
               {currentVoicePack && (
                 <motion.div
                   initial={{ opacity: 0, x: 20 }}
@@ -355,17 +418,16 @@ export default function BreathingGuide() {
             </div>
           </motion.header>
 
-          {/* Mobile Header */}
           <motion.header
             initial={{ y: -50, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
             className="md:hidden pt-4 px-4 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200 dark:border-gray-800 shrink-0"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center text-xl">
-                  🧘
+                  ðŸ§˜
                 </div>
                 <div>
                   <h1 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -386,7 +448,6 @@ export default function BreathingGuide() {
             </div>
           </motion.header>
 
-          {/* Main Content Area */}
           <main className="flex-1 overflow-hidden min-h-0">
             <motion.div
               key={activeTab}
@@ -400,7 +461,6 @@ export default function BreathingGuide() {
             </motion.div>
           </main>
 
-          {/* Bottom Navigation */}
           <BottomNavigation
             activeTab={activeTab}
             onTabChange={setActiveTab}

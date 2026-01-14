@@ -174,30 +174,53 @@ export const useBreathing = (settings: BreathingSettings) => {
 
           const halfCycle = settings.inhaleDuration + settings.holdDuration + settings.exhaleDuration;
 
-          if (cycleTime < settings.inhaleDuration) {
-            currentPhase = 'inhale';
-            currentNostril = 'left';
-            phaseElapsed = cycleTime;
-          } else if (cycleTime < settings.inhaleDuration + settings.holdDuration) {
-            currentPhase = 'hold';
-            currentNostril = 'left';
-            phaseElapsed = cycleTime - settings.inhaleDuration;
-          } else if (cycleTime < halfCycle) {
-            currentPhase = 'exhale';
-            currentNostril = 'right';
-            phaseElapsed = cycleTime - settings.inhaleDuration - settings.holdDuration;
-          } else if (cycleTime < halfCycle + settings.inhaleDuration) {
-            currentPhase = 'inhale';
-            currentNostril = 'right';
-            phaseElapsed = cycleTime - halfCycle;
-          } else if (cycleTime < halfCycle + settings.inhaleDuration + settings.holdDuration) {
-            currentPhase = 'hold';
-            currentNostril = 'right';
-            phaseElapsed = cycleTime - halfCycle - settings.inhaleDuration;
+          // Handle zero hold duration - skip hold phase entirely
+          if (settings.holdDuration === 0) {
+            // No hold: Inhale → Exhale (left side) → Inhale → Exhale (right side)
+            if (cycleTime < settings.inhaleDuration) {
+              currentPhase = 'inhale';
+              currentNostril = 'left';
+              phaseElapsed = cycleTime;
+            } else if (cycleTime < settings.inhaleDuration + settings.exhaleDuration) {
+              currentPhase = 'exhale';
+              currentNostril = 'right';
+              phaseElapsed = cycleTime - settings.inhaleDuration;
+            } else if (cycleTime < halfCycle + settings.inhaleDuration) {
+              currentPhase = 'inhale';
+              currentNostril = 'right';
+              phaseElapsed = cycleTime - halfCycle;
+            } else {
+              currentPhase = 'exhale';
+              currentNostril = 'left';
+              phaseElapsed = cycleTime - halfCycle - settings.inhaleDuration;
+            }
           } else {
-            currentPhase = 'exhale';
-            currentNostril = 'left';
-            phaseElapsed = cycleTime - halfCycle - settings.inhaleDuration - settings.holdDuration;
+            // Normal mode with hold phase
+            if (cycleTime < settings.inhaleDuration) {
+              currentPhase = 'inhale';
+              currentNostril = 'left';
+              phaseElapsed = cycleTime;
+            } else if (cycleTime < settings.inhaleDuration + settings.holdDuration) {
+              currentPhase = 'hold';
+              currentNostril = 'left';
+              phaseElapsed = cycleTime - settings.inhaleDuration;
+            } else if (cycleTime < halfCycle) {
+              currentPhase = 'exhale';
+              currentNostril = 'right';
+              phaseElapsed = cycleTime - settings.inhaleDuration - settings.holdDuration;
+            } else if (cycleTime < halfCycle + settings.inhaleDuration) {
+              currentPhase = 'inhale';
+              currentNostril = 'right';
+              phaseElapsed = cycleTime - halfCycle;
+            } else if (cycleTime < halfCycle + settings.inhaleDuration + settings.holdDuration) {
+              currentPhase = 'hold';
+              currentNostril = 'right';
+              phaseElapsed = cycleTime - halfCycle - settings.inhaleDuration;
+            } else {
+              currentPhase = 'exhale';
+              currentNostril = 'left';
+              phaseElapsed = cycleTime - halfCycle - settings.inhaleDuration - settings.holdDuration;
+            }
           }
 
           const currentDuration = getPhaseDuration(currentPhase);

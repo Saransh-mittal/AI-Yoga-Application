@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Enable React strict mode for better debugging
-  reactStrictMode: true,
+  // reactStrictMode: true,
 
   // TypeScript strict mode
   typescript: {
