@@ -24,6 +24,13 @@ COPY . .
 # Remove any macOS lockfile that got copied, not needed for build
 RUN rm -f package-lock.json
 
+# Accept NEXT_PUBLIC_* vars as build args (Railway injects these during Docker build)
+ARG NEXT_PUBLIC_XTTS_BACKEND_URL
+ENV NEXT_PUBLIC_XTTS_BACKEND_URL=$NEXT_PUBLIC_XTTS_BACKEND_URL
+
+ARG NEXT_PUBLIC_DEFAULT_TTS_ENGINE
+ENV NEXT_PUBLIC_DEFAULT_TTS_ENGINE=$NEXT_PUBLIC_DEFAULT_TTS_ENGINE
+
 # Build Next.js (output: 'standalone' is set in next.config.ts)
 RUN npm run build
 
