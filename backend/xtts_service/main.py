@@ -45,24 +45,36 @@ voice_pack_manager = None
 
 
 def create_default_voice():
-    """Create default voice sample using macOS 'say' command"""
+    """Create default voice sample (cross-platform: espeak for Linux/Docker, say for macOS)"""
     if os.path.exists(DEFAULT_VOICE_PATH):
-        logger.info(f"Ã¢Å“â€¦ Default voice exists")
+        logger.info("Default voice exists")
         return
+    sample_text = (
+        "Hello, I am your default breathing guide. "
+        "I will help you find peace and balance through your practice."
+    )
+    # Try espeak first (Linux/Docker)
     try:
-        logger.info("Creating default voice...")
-        sample_text = (
-            "Hello, I am your default breathing guide. "
-            "I will help you find peace and balance through your practice."
+        logger.info("Creating default voice with espeak...")
+        subprocess.run(
+            ["espeak", "-w", DEFAULT_VOICE_PATH, sample_text],
+            check=True, capture_output=True
         )
+        logger.info("Default voice created with espeak")
+        return
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        logger.info("espeak not available, trying macOS say...")
+    # Fallback to macOS say
+    try:
         subprocess.run(
             ["say", "-v", "Samantha", "-o", DEFAULT_VOICE_PATH, sample_text],
-            check=True
+            check=True, capture_output=True
         )
-        logger.info(f"Ã¢Å“â€¦ Default voice created")
-    except Exception as e:
-        logger.warning(f"Could not create default voice: {e}")
-
+        logger.info("Default voice created with say")
+        return
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    logger.warning("Could not create default voice (no TTS tool available)")
 
 async def create_default_voice_pack():
     """Create default voice pack on startup"""
@@ -153,16 +165,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Build CORS origins from env var + localhost defaults
+_default_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:8000",
+]
+_env_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+_all_origins = _default_origins + [o.strip() for o in _env_origins if o.strip()]
+logger.info(f"CORS origins: {_all_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        "http://127.0.0.1:8000",
-    ],
+    allow_origins=_all_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

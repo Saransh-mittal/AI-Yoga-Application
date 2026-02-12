@@ -68,5 +68,5 @@ backend/xtts_service/voice_pack_generator/
 # Test directories
 app/test-sse/
 
-# UI components (if auto-generated)
-components/ui/
+# UI components - DO NOT ignore (shadcn components are source files needed for build)
+# components/ui/

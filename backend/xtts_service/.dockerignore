@@ -1,0 +1,24 @@
+# Backend .dockerignore
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+.git
+
+# Generated content (will be created at runtime)
+voice_packs/
+default_voices/
+guided_voices/
+voice_samples/
+common_voice_downloads/
+cv_clips_selected/
+voice_pack_generator/
+
+# Audio files
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.csv
