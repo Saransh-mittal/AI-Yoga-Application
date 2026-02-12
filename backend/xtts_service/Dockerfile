@@ -35,6 +35,9 @@ COPY setup_common_voice.py .
 # Create directories for voice data
 RUN mkdir -p voice_packs default_voices guided_voices voice_samples
 
+# Auto-accept Coqui TTS license (required for non-interactive Docker)
+ENV COQUI_TOS_AGREED=1
+
 # Railway sets PORT dynamically
 ENV PORT=8000
 EXPOSE 8000
