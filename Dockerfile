@@ -8,8 +8,8 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 # Install dependencies based on lockfile
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+COPY package.json package-lock.json* ./
+RUN npm install
 
 # ============================================================================
 # Stage 2: Build the application
