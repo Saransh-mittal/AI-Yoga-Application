@@ -2,19 +2,19 @@
 # Uses standalone output for minimal image size
 
 # ============================================================================
-# Stage 1: Install dependencies
+# Stage 1: Install dependencies (Debian-slim for native binary compatibility)
 # ============================================================================
-FROM node:20-alpine AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
 
-# Install dependencies based on lockfile
+# Install dependencies
 COPY package.json package-lock.json* ./
 RUN npm install
 
 # ============================================================================
 # Stage 2: Build the application
 # ============================================================================
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
