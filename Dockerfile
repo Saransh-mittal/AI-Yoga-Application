@@ -7,8 +7,9 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 
-# Install dependencies
-COPY package.json package-lock.json* ./
+# Copy package.json only (NOT lockfile — lockfile from macOS won't include
+# Linux platform binaries for lightningcss/tailwindcss native deps)
+COPY package.json ./
 RUN npm install
 
 # ============================================================================
@@ -19,6 +20,9 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Remove any macOS lockfile that got copied, not needed for build
+RUN rm -f package-lock.json
 
 # Build Next.js (output: 'standalone' is set in next.config.ts)
 RUN npm run build
