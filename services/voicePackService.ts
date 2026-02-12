@@ -117,8 +117,17 @@ class VoicePackService {
   private audioCache: Map<string, HTMLAudioElement>;
 
   constructor() {
-    this.backendUrl = process.env.NEXT_PUBLIC_XTTS_BACKEND_URL || 'http://localhost:8000';
+    this.backendUrl = '';  // Set lazily on first use
     this.audioCache = new Map();
+  }
+
+  private getBackendUrl(): string {
+    if (!this.backendUrl) {
+      // Dynamic import to avoid SSR issues
+      const { getXttsBackendUrl } = require('@/lib/config');
+      this.backendUrl = getXttsBackendUrl();
+    }
+    return this.backendUrl;
   }
 
   /**
@@ -174,7 +183,7 @@ class VoicePackService {
       formData.append('language', language);
       formData.append('speed', speed.toString());
 
-      const initResponse = await fetch(`${this.backendUrl}/api/voice-packs/init`, {
+      const initResponse = await fetch(`${this.getBackendUrl()}/api/voice-packs/init`, {
         method: 'POST',
         body: formData,
       });
@@ -228,7 +237,7 @@ class VoicePackService {
       }
 
       const initResponse = await fetch(
-        `${this.backendUrl}/api/voice-packs/${packId}/update/init`,
+        `${this.getBackendUrl()}/api/voice-packs/${packId}/update/init`,
         {
           method: 'POST',
           body: formData,
@@ -282,7 +291,7 @@ class VoicePackService {
       formData.append('new_speed', newSpeed.toString());
 
       const initResponse = await fetch(
-        `${this.backendUrl}/api/voice-packs/${packId}/update-speed/init`,
+        `${this.getBackendUrl()}/api/voice-packs/${packId}/update-speed/init`,
         {
           method: 'POST',
           body: formData,
@@ -347,7 +356,7 @@ class VoicePackService {
     onProgress?: (progress: ProgressData) => void
   ): Promise<VoicePack> {
     return new Promise((resolve, reject) => {
-      const sseUrl = `${this.backendUrl}/api/voice-packs/progress/${operationId}`;
+      const sseUrl = `${this.getBackendUrl()}/api/voice-packs/progress/${operationId}`;
       console.log('ðŸ“¡ Connecting to SSE:', sseUrl);
 
       const eventSource = new EventSource(sseUrl);
@@ -435,7 +444,7 @@ class VoicePackService {
    */
   async getVoicePack(packId: string): Promise<VoicePack | null> {
     try {
-      const response = await fetch(`${this.backendUrl}/api/voice-packs/${packId}`);
+      const response = await fetch(`${this.getBackendUrl()}/api/voice-packs/${packId}`);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -486,7 +495,7 @@ class VoicePackService {
       }
 
       const queryString = queryParams.toString();
-      const url = `${this.backendUrl}/api/voice-packs${queryString ? `?${queryString}` : ''}`;
+      const url = `${this.getBackendUrl()}/api/voice-packs${queryString ? `?${queryString}` : ''}`;
 
       const response = await fetch(url);
 
@@ -515,7 +524,7 @@ class VoicePackService {
    */
   async deleteVoicePack(packId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.backendUrl}/api/voice-packs/${packId}`, {
+      const response = await fetch(`${this.getBackendUrl()}/api/voice-packs/${packId}`, {
         method: 'DELETE',
       });
 
@@ -544,7 +553,7 @@ class VoicePackService {
    * @returns Audio URL string
    */
   getAudioUrl(packId: string, phaseKey: string, variantIndex: number): string {
-    return `${this.backendUrl}/api/voice-packs/${packId}/audio/${phaseKey}/${variantIndex}`;
+    return `${this.getBackendUrl()}/api/voice-packs/${packId}/audio/${phaseKey}/${variantIndex}`;
   }
 
   /**
@@ -636,7 +645,7 @@ class VoicePackService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.backendUrl}/`);
+      const response = await fetch(`${this.getBackendUrl()}/`);
 
       if (!response.ok) {
         return false;
@@ -662,7 +671,7 @@ class VoicePackService {
    */
   async getBackendStatus(): Promise<any> {
     try {
-      const response = await fetch(`${this.backendUrl}/`);
+      const response = await fetch(`${this.getBackendUrl()}/`);
 
       if (!response.ok) {
         throw new Error('Backend not responding');
