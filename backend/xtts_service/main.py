@@ -10,13 +10,16 @@ CHANGES:
 - Progress tracking through VoicePackManager
 """
 
+import os
+# Auto-accept Coqui TTS license to prevent interactive prompt blocking on local startup
+os.environ["COQUI_TOS_AGREED"] = "1"
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from TTS.api import TTS
 from typing import Optional
-import os
 import tempfile
 import logging
 import warnings
@@ -81,10 +84,10 @@ async def create_default_voice_pack():
     global voice_pack_manager
     try:
         if voice_pack_manager.get_voice_pack(DEFAULT_VOICE_PACK_ID):
-            logger.info(f"Ã¢Å“â€¦ Default pack exists")
+            logger.info(f"✅ Default pack exists")
             return
 
-        logger.info("Creating default pack...")
+        logger.info("Creating default pack (this runs in the background)...")
         default_instructions = {
             'left-inhale': [
                 "Breathe in deeply through your left nostril",
@@ -121,7 +124,7 @@ async def create_default_voice_pack():
             language="en",
             speed=1.0
         )
-        logger.info(f"Ã¢Å“â€¦ Default pack created")
+        logger.info(f"✅ Default pack created")
     except Exception as e:
         logger.error(f"Failed to create default pack: {e}")
 
@@ -132,25 +135,27 @@ async def lifespan(app: FastAPI):
     global tts_model, voice_pack_manager
 
     logger.info("="*80)
-    logger.info("Ã°Å¸Å¡â‚¬ XTTS BACKEND STARTING - WITH SSE PROGRESS")
+    logger.info("🚀 XTTS BACKEND STARTING - WITH SSE PROGRESS")
     logger.info("="*80)
 
     try:
         create_default_voice()
         logger.info(f"Loading model (GPU: {USE_GPU})...")
         tts_model = TTS(MODEL_NAME, gpu=USE_GPU)
-        logger.info("Ã¢Å“â€¦ Model loaded")
+        logger.info("✅ Model loaded")
 
         voice_pack_manager = VoicePackManager(tts_model)
-        logger.info("Ã¢Å“â€¦ Manager initialized")
+        logger.info("✅ Manager initialized")
 
-        await create_default_voice_pack()
+        # Run this in the background so it doesn't block the FastAPI initialization,
+        # avoiding Railway 120s max startup timeout on slow CPUs
+        asyncio.create_task(create_default_voice_pack())
 
         logger.info("="*80)
-        logger.info("Ã¢Å“â€¦ BACKEND READY - SSE Progress Tracking Enabled")
+        logger.info("✅ BACKEND READY - SSE Progress Tracking Enabled")
         logger.info("="*80)
     except Exception as e:
-        logger.error(f"Ã¢ÂÅ’ Startup failed: {e}")
+        logger.error(f"❌ Startup failed: {e}")
         raise
 
     yield

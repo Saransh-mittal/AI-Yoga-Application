@@ -250,9 +250,10 @@ class VoicePackManager:
                     filename = f"{phase_key}_variant_{idx}.wav"
                     output_path = os.path.join(pack_dir, filename)
 
-                    # Generate audio with TTS
+                    # Generate audio with TTS (using asyncio.to_thread to avoid blocking the event loop)
                     try:
-                        self.tts_model.tts_to_file(
+                        await asyncio.to_thread(
+                            self.tts_model.tts_to_file,
                             text=text,
                             file_path=output_path,
                             speaker_wav=voice_sample_path,
@@ -446,9 +447,10 @@ class VoicePackManager:
 
                     logger.info(f"   Generating: {filename}")
 
-                    # Generate audio with TTS
+                    # Generate audio with TTS (using asyncio.to_thread to avoid blocking the event loop)
                     try:
-                        self.tts_model.tts_to_file(
+                        await asyncio.to_thread(
+                            self.tts_model.tts_to_file,
                             text=text,
                             file_path=output_path,
                             speaker_wav=voice_sample_path,
@@ -590,13 +592,19 @@ class VoicePackManager:
                     filename = f"{phase_key}_variant_{idx}.wav"
                     output_path = os.path.join(pack_dir, filename)
 
-                    self.tts_model.tts_to_file(
-                        text=text,
-                        file_path=output_path,
-                        speaker_wav=voice_sample_path,
-                        language=metadata["language"],
-                        speed=new_speed
-                    )
+                    # Generate audio with TTS (using asyncio.to_thread to avoid blocking the event loop)
+                    try:
+                        await asyncio.to_thread(
+                            self.tts_model.tts_to_file,
+                            text=text,
+                            file_path=output_path,
+                            speaker_wav=voice_sample_path,
+                            language=metadata["language"],
+                            speed=new_speed
+                        )
+                    except Exception as e:
+                        logger.error(f"   TTS generation failed for {filename}: {str(e)}")
+                        continue
 
                     if self._validate_audio_file(output_path):
                         self._normalize_audio(output_path)
