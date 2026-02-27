@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir \
 # Install remaining dependencies (skip torch since we already installed CPU version)
 RUN grep -v "^torch" requirements.txt | grep -v "^torchvision" | grep -v "^torchaudio" | pip install --no-cache-dir -r /dev/stdin
 
+# CRITICAL FIX: Force numpy to 1.x to fix "expected np.ndarray (got numpy.ndarray)" PyTorch/Coqui TTS ABI C-extension error
+RUN pip install "numpy<2.0.0"
+
 # Copy application code
 COPY main.py .
 COPY voice_pack_manager.py .
