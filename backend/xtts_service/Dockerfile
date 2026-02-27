@@ -17,6 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 COPY requirements.txt .
 
+# CRITICAL FIX: Force numpy to 1.x FIRST to fix "expected np.ndarray (got numpy.ndarray)" PyTorch/Coqui TTS ABI C-extension error.
+# PyTorch and Coqui TTS monotonically_align C-extensions must be built/installed while numpy 1.x is active.
+RUN pip install --no-cache-dir "numpy<2.0.0"
+
 # Install PyTorch CPU-only first (smaller than the full CUDA version)
 RUN pip install --no-cache-dir \
   torch==2.5.1+cpu \
@@ -26,9 +30,6 @@ RUN pip install --no-cache-dir \
 
 # Install remaining dependencies (skip torch since we already installed CPU version)
 RUN grep -v "^torch" requirements.txt | grep -v "^torchvision" | grep -v "^torchaudio" | pip install --no-cache-dir -r /dev/stdin
-
-# CRITICAL FIX: Force numpy to 1.x to fix "expected np.ndarray (got numpy.ndarray)" PyTorch/Coqui TTS ABI C-extension error
-RUN pip install "numpy<2.0.0"
 
 # Copy application code
 COPY main.py .
