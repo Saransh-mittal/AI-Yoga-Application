@@ -24,10 +24,7 @@ COPY . .
 # Remove any macOS lockfile that got copied, not needed for build
 RUN rm -f package-lock.json
 
-# Accept NEXT_PUBLIC_* vars as build args (Railway injects these during Docker build)
-ARG NEXT_PUBLIC_XTTS_BACKEND_URL
-ENV NEXT_PUBLIC_XTTS_BACKEND_URL=$NEXT_PUBLIC_XTTS_BACKEND_URL
-
+# Accept build-time vars (Railway injects these during Docker build)
 ARG NEXT_PUBLIC_DEFAULT_TTS_ENGINE
 ENV NEXT_PUBLIC_DEFAULT_TTS_ENGINE=$NEXT_PUBLIC_DEFAULT_TTS_ENGINE
 
@@ -42,6 +39,11 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV HOSTNAME="0.0.0.0"
+
+# Server-side env vars (set at runtime via Railway/Docker)
+# XTTS_BACKEND_URL - URL to the FastAPI XTTS backend (server-side only, not exposed to client)
+# NEXTAUTH_SECRET - Required for NextAuth JWT encryption
+# NEXTAUTH_URL - The canonical URL of this app (e.g. https://your-app.railway.app)
 
 # Don't run as root
 RUN addgroup --system --gid 1001 nodejs
