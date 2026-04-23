@@ -13,7 +13,6 @@ import {
   createVoiceCustomizationAgent,
   createSettingsControlAgent,
   YogaAgentContext,
-  setAgentContext,
   isVoiceCustomizationOutput,
   isSettingsControlOutput,
 } from '@/lib/agents/yogaAgents';
@@ -42,7 +41,24 @@ import { AIModel } from '@/models/types';
  * 3. Create triage agent with those specialized agents
  * 4. Run workflow with user's preferences respected
  */
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { rateLimit } from '@/lib/rateLimit';
+
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ type: 'error', message: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Rate limiting (e.g., 30 requests per minute per user)
+  const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+  const rateLimitResult = rateLimit(`${session.user?.email || ip}-chat`, 30, 60 * 1000);
+  
+  if (!rateLimitResult.success) {
+    return NextResponse.json({ type: 'error', message: 'Too many requests' }, { status: 429 });
+  }
+
   try {
     const body = await request.json();
     const {
@@ -75,8 +91,6 @@ export async function POST(request: NextRequest) {
       conversationHistory,
       userLanguage: 'en',
     };
-
-    setAgentContext(agentContext);
 
     // ========================================================================
     // STEP 1: Handle Clarification Response (unchanged)
@@ -151,9 +165,9 @@ export async function POST(request: NextRequest) {
      * is just a string parameter. No actual model loading happens here.
      */
     const specializedAgents = {
-      settingsAgent: createSettingsControlAgent(userModel),
-      voiceAgent: createVoiceCustomizationAgent(userModel),
-      yogaAgent: createYogaGuideAgent(userModel),
+      settingsAgent: createSettingsControlAgent(userModel, agentContext),
+      voiceAgent: createVoiceCustomizationAgent(userModel, agentContext),
+      yogaAgent: createYogaGuideAgent(userModel, agentContext),
     };
 
     /**
@@ -176,30 +190,29 @@ export async function POST(request: NextRequest) {
     // STEP 4: Run Agent Workflow (unchanged)
     // ========================================================================
 
-    let fullInput = '';
-
-    if (conversationHistory && conversationHistory.length > 0) {
-      fullInput += '=== CONVERSATION HISTORY ===\n';
-      conversationHistory.forEach((msg: { role: string; content: string }) => {
-        fullInput += `${msg.role}: ${msg.content}\n`;
-      });
-      fullInput += '\n=== CURRENT REQUEST ===\n';
-    }
-
-    fullInput += userMessage;
-
+    // IMPORTANT: Only send the current message to the triage agent.
+    // Conversation history was drowning the routing signal and biasing
+    // the triage toward whichever agent handled the previous turn.
+    // The @openai/agents SDK automatically passes conversation context
+    // to the specialized agent on handoff.
     console.log('🤖 Running agent workflow...');
 
-    const result = await run(triageAgent, fullInput);
+    const result = await run(triageAgent, userMessage);
 
     console.log('✅ Agent workflow completed');
 
     const agentName = result.lastAgent?.name || 'Unknown';
     const output = result.finalOutput;
 
-    console.log('Last Agent:', agentName);
-    console.log('Output Type:', typeof output);
-    console.log(`Model Used: ${userModel} (for ${agentName})`);
+    // Structured diagnostic log for routing decisions
+    console.log(JSON.stringify({
+      event: 'triage_result',
+      userMessage: userMessage.substring(0, 120),
+      routedTo: agentName,
+      outputType: typeof output,
+      isStructuredOutput: typeof output === 'object' && output !== null,
+      userModel,
+    }));
 
     // ========================================================================
     // SAFETY CHECK: Detect Triage Agent Output (unchanged)

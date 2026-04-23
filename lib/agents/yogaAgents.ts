@@ -9,6 +9,7 @@
 // - Full voice customization instructions included
 
 import { Agent } from '@openai/agents';
+import { promptWithHandoffInstructions } from '@openai/agents-core/extensions';
 import { MessagesConfig, BreathingSettings, AIModel } from '@/models/types';
 import { z } from 'zod';
 
@@ -61,26 +62,6 @@ export interface YogaAgentContext {
   userLanguage?: 'en' | 'hi';
 }
 
-let currentContext: YogaAgentContext | null = null;
-
-export function setAgentContext(context: YogaAgentContext): void {
-  currentContext = context;
-}
-
-export function getAgentContext(): YogaAgentContext {
-  if (!currentContext) {
-    throw new Error('Agent context not initialized. Call setAgentContext first.');
-  }
-  return currentContext;
-}
-
-function getContext(): YogaAgentContext {
-  if (!currentContext) {
-    throw new Error('Agent context not set. Call setAgentContext() before running agents.');
-  }
-  return currentContext;
-}
-
 // ============================================================================
 // MODEL MAPPING
 // ============================================================================
@@ -113,8 +94,9 @@ function mapModelToAPI(userModel: AIModel): string {
  * REASONING: Boundary detection is a simple binary task (on-topic vs off-topic)
  * Using the fastest model is optimal here - no need for user's choice
  */
-export const boundaryAgent = new Agent({
+export const boundaryAgent = Agent.create({
   name: 'Boundary Agent',
+  handoffDescription: 'Handles off-topic requests that are unrelated to yoga, breathing exercises, or app settings/customization. Route here when the user asks about non-yoga topics.',
   model: 'gpt-5-nano',
   instructions: 'You politely inform users when their question is outside your scope.\n\n' +
     'YOU ARE: A yoga and breathing exercise assistant\n\n' +
@@ -151,12 +133,13 @@ export const boundaryAgent = new Agent({
  * @param model - User's selected AI model for quality/speed trade-off
  * @returns Agent configured for yoga guidance with text output
  */
-export function createYogaGuideAgent(model: AIModel): Agent<any, any> {
-  return new Agent({
+export function createYogaGuideAgent(model: AIModel, context: YogaAgentContext) {
+  return Agent.create({
     name: 'Yoga Guide Agent',
+    handoffDescription: 'Answers QUESTIONS about yoga, pranayama, breathing techniques, mindfulness, and meditation. Route here ONLY when the user is asking for information, advice, or explanations — NOT when they want to create, modify, or generate new voice instructions or app settings.',
     model: mapModelToAPI(model),
     instructions: () => {
-      const context = getContext();
+      // const context = getContext();
       return 'You are a knowledgeable yoga instructor specializing in pranayama (breathing exercises).\n\n' +
         'YOUR EXPERTISE:\n' +
         '- Alternate nostril breathing (Nadi Shodhana)\n' +
@@ -198,13 +181,13 @@ export function createYogaGuideAgent(model: AIModel): Agent<any, any> {
  * @param model - User's selected AI model
  * @returns Agent configured with VoiceCustomizationOutputSchema
  */
-export function createVoiceCustomizationAgent(model: AIModel): Agent<any, any> {
-  return new Agent({
+export function createVoiceCustomizationAgent(model: AIModel, context: YogaAgentContext) {
+  return Agent.create({
     name: 'Voice Customization Agent',
+    handoffDescription: 'Creates, generates, modifies, or customizes the spoken voice instruction TEXT for breathing phases. Route here when the user wants to change WHAT the voice says — e.g. "create new instructions", "generate spiritual guidance", "make it shorter", "change the words", "rewrite in ravi shankar style", "more calming instructions", "use 2 words only".',
     model: mapModelToAPI(model),
     outputType: VoiceCustomizationOutputSchema,
     instructions: () => {
-      const context = getContext();
       return 'You customize breathing voice guidance based on user preferences.\n\n' +
         'CRITICAL CONTEXT:\n' +
         '- Review conversation history to understand what they\'re modifying\n' +
@@ -359,13 +342,13 @@ export function createVoiceCustomizationAgent(model: AIModel): Agent<any, any> {
  * @param model - User's selected AI model
  * @returns Agent configured with SettingsControlOutputSchema
  */
-export function createSettingsControlAgent(model: AIModel): Agent<any, any> {
-  return new Agent({
+export function createSettingsControlAgent(model: AIModel, context: YogaAgentContext) {
+  return Agent.create({
     name: 'Settings Control Agent',
+    handoffDescription: 'Changes app SETTINGS and behavior — breathing phase durations, session length, voice speed, mode (guided/simple), toggling voice guidance or beeps on/off, setting default voice pack. Route here when the user wants to change HOW the app behaves, not WHAT the voice says.',
     model: mapModelToAPI(model),
     outputType: SettingsControlOutputSchema,
     instructions: () => {
-      const context = getContext();
       return 'You help users modify app settings through natural language.\n\n' +
         'CAPABILITIES:\n' +
         'You can change:\n' +
@@ -507,11 +490,12 @@ export function createTriageAgent(specializedAgents: {
   settingsAgent: Agent<any, any>;
   voiceAgent: Agent<any, any>;
   yogaAgent: Agent<any, any>;
-}): Agent<any, any> {
+}) {
   return Agent.create({
     name: 'Triage Agent',
     model: 'gpt-5-mini', // FIXED MODEL for efficient routing
-    instructions: 'You are a silent router that classifies user intent and immediately hands off to the appropriate agent. YOU MUST NOT OUTPUT ANY TEXT.\n\n' +
+    instructions: promptWithHandoffInstructions(
+      'You are a silent router that classifies user intent and immediately hands off to the appropriate agent. YOU MUST NOT OUTPUT ANY TEXT.\n\n' +
       'CRITICAL RULES:\n' +
       '❌ DO NOT say "Handing off to..."\n' +
       '❌ DO NOT say "Routing to..."\n' +
@@ -522,6 +506,15 @@ export function createTriageAgent(specializedAgents: {
       '1. Read the user\'s message\n' +
       '2. Classify the intent silently\n' +
       '3. Hand off immediately without any output\n\n' +
+      '⚠️ CRITICAL DISAMBIGUATION — READ FIRST:\n' +
+      'The MOST COMMON misroute is between Voice Customization and Yoga Guide.\n\n' +
+      'RULE 1: If the user wants to CREATE, GENERATE, WRITE, CHANGE, UPDATE, MODIFY, ' +
+      'CUSTOMIZE, or REWRITE instructions/guidance/prompts/words → ALWAYS Voice Customization Agent.\n' +
+      'RULE 2: If the user is ASKING A QUESTION or seeking INFORMATION/ADVICE → Yoga Guide Agent.\n' +
+      'RULE 3: If the user mentions "new instructions", "different style", "shorter/longer words", ' +
+      '"rewrite", "customize the voice" → ALWAYS Voice Customization Agent.\n' +
+      'RULE 4: If the user mentions a STYLE or THEME (e.g. "spiritual", "calming", "ravi shankar", ' +
+      '"energizing", "healing") for the instructions → ALWAYS Voice Customization Agent.\n\n' +
       'CLASSIFICATION RULES:\n\n' +
       '1. SETTINGS CONTROL → Settings Control Agent\n' +
       '   Indicators:\n' +
@@ -533,17 +526,23 @@ export function createTriageAgent(specializedAgents: {
       '   Examples: "5 minute session", "slower voice", "turn off beeps", "switch to simple mode"\n\n' +
       '2. VOICE CUSTOMIZATION → Voice Customization Agent\n' +
       '   Indicators:\n' +
-      '   - Requests to change voice instructions/words\n' +
+      '   - Requests to change, create, or generate voice instructions/words\n' +
+      '   - ACTION VERBS: create, generate, write, rewrite, change, update, modify, customize\n' +
+      '   - "new instructions", "different guidance", "rewrite the prompts"\n' +
       '   - "make it shorter", "use simpler words", "more descriptive"\n' +
       '   - "change the instructions to...", "say X instead of Y"\n' +
-      '   Examples: "make it shorter", "use 2 words", "more calming instructions"\n\n' +
+      '   - Style/theme requests: "more spiritual", "calming tone", "ravi shankar style"\n' +
+      '   Examples: "make it shorter", "create new breathing instructions", ' +
+      '"generate spiritual guidance", "write instructions in hindi", ' +
+      '"more calming instructions", "use 2 words only"\n\n' +
       '3. YOGA/BREATHING QUESTIONS → Yoga Guide Agent\n' +
       '   Indicators:\n' +
-      '   - Questions about breathing techniques\n' +
+      '   - Questions about breathing techniques (NOT requests to change them)\n' +
       '   - "what are the benefits of...", "how do I...", "why should I..."\n' +
       '   - Questions about pranayama, yoga philosophy\n' +
       '   - Requests for advice or tips\n' +
-      '   Examples: "benefits of anulom vilom", "how to breathe properly"\n\n' +
+      '   - MUST be a QUESTION, not an action request\n' +
+      '   Examples: "benefits of anulom vilom", "how to breathe properly", "what is pranayama"\n\n' +
       '4. OFF-TOPIC → Boundary Agent\n' +
       '   Indicators:\n' +
       '   - Questions unrelated to yoga or breathing\n' +
@@ -551,12 +550,10 @@ export function createTriageAgent(specializedAgents: {
       '   Examples: "what\'s the weather", "who won the game"\n\n' +
       'CRITICAL DISTINCTION:\n' +
       '- Settings = App functionality (mode, duration, toggles, speed)\n' +
-      '- Voice = Instruction wording (what the voice says)\n\n' +
-      'PROCESS:\n' +
-      '1. Classify the intent (silently)\n' +
-      '2. Hand off immediately (no output)\n' +
-      '3. Let the specialized agent respond\n\n' +
-      'REMEMBER: You are INVISIBLE. The user should only see the specialized agent\'s response, never yours.',
+      '- Voice = Instruction WORDING (what the voice says) — includes CREATE/GENERATE/MODIFY\n' +
+      '- Yoga Guide = QUESTIONS and INFORMATION only\n\n' +
+      'REMEMBER: You are INVISIBLE. The user should only see the specialized agent\'s response, never yours.'
+    ),
     handoffs: [
       specializedAgents.settingsAgent,
       specializedAgents.voiceAgent,
