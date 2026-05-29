@@ -31,6 +31,7 @@ import { SettingsPanel } from './ModernSettingsPanel'
 import { ChatPanel } from './ChatPanel'
 import { VoicePackManager } from './VoicePackManager'
 import { FloatingParticles } from '@/components/FloatingParticles'
+import { UserMenu } from '@/components/UserMenu'
 
 type NavigationTab = 'breathe' | 'guide' | 'settings' | 'voice'
 
@@ -75,15 +76,15 @@ export default function BreathingGuide() {
     updateVoicePack,
     createVoicePack,
     isLoading: isVoicePackLoading,
-    // âœ… CRITICAL: Extract progress props for ChatPanel
+    // ✅ CRITICAL: Extract progress props for ChatPanel
     currentProgress,
     showProgress,
   } = useVoicePack()
 
-  // âœ… CRITICAL: Sync customMessages with currentVoicePack instructions
+  // ✅ CRITICAL: Sync customMessages with currentVoicePack instructions
   // When a voice pack is selected, use its stored instructions from metadata instead of defaults
   // This ensures the AI has the ACTUAL current state when suggesting changes
-  // Flow: Voice pack loaded â†' instructions extracted â†' customMessages updated â†' passed to API
+  // Flow: Voice pack loaded -> instructions extracted -> customMessages updated -> passed to API
   // NOTE: This useEffect comes AFTER useVoicePack() hook so currentVoicePack is properly declared
   useEffect(() => {
     if (currentVoicePack?.instructions) {
@@ -117,7 +118,7 @@ export default function BreathingGuide() {
     customMessages,
     settings,
     aiModel,
-    // âœ… Voice update handler with SSE progress tracking
+    // ✅ Voice update handler with SSE progress tracking
     async (instructions, packId, onProgress) => {
       console.log('ðŸŽ¤ Chat: Applying voice changes to pack:', packId)
       console.log('ðŸ“ New instructions:', instructions)
@@ -139,12 +140,12 @@ export default function BreathingGuide() {
         }
 
         console.log(
-          'ðŸ”„ Phases to update:',
+          '🔄 Phases to update:',
           changedPhases.length > 0 ? changedPhases : 'all',
         )
         onProgress('Regenerating audio with new instructions...')
 
-        // âœ… CRITICAL: Use updateVoicePack with SSE progress
+        // ✅ CRITICAL: Use updateVoicePack with SSE progress
         // This will automatically trigger progress updates via the hook
         await updateVoicePack({
           packId,
@@ -152,17 +153,17 @@ export default function BreathingGuide() {
           phasesToUpdate: changedPhases.length > 0 ? changedPhases : undefined,
         })
 
-        console.log('âœ… Chat: Voice pack updated successfully')
+        console.log('✅ Chat: Voice pack updated successfully')
         onProgress('Updated successfully!')
       } catch (error) {
-        console.error('âŒ Chat: Failed to update voice pack:', error)
+        console.error('❌ Chat: Failed to update voice pack:', error)
         onProgress('Warning: Instructions updated but regeneration failed')
         throw error
       }
     },
-    // âœ… Settings update handler with speed support
+    // ✅ Settings update handler with speed support
     partialSettings => {
-      console.log('âš™ï¸ Chat: Applying settings changes:', partialSettings)
+      console.log('⚙️ Chat: Applying settings changes:', partialSettings)
 
       // Handle voice speed changes with SSE progress
       if (
@@ -172,42 +173,42 @@ export default function BreathingGuide() {
       ) {
         const newSpeed = partialSettings.voiceSpeed
         console.log(
-          `ðŸŽšï¸ Speed change requested: ${currentVoicePack.speed}x â†’ ${newSpeed}x`,
+          `🎚️ Speed change requested: ${currentVoicePack.speed}x → ${newSpeed}x`,
         )
 
-        // âœ… CRITICAL: This triggers SSE progress automatically
+        // ✅ CRITICAL: This triggers SSE progress automatically
         updateVoicePackSpeed({
           packId: currentVoicePack.id,
           newSpeed,
         }).catch(error => {
-          console.error('âŒ Chat: Failed to update voice pack speed:', error)
+          console.error('❌ Chat: Failed to update voice pack speed:', error)
         })
       }
 
       setSettings(prev => ({ ...prev, ...partialSettings }))
-      console.log('âœ… Chat: Settings applied')
+      console.log('✅ Chat: Settings applied')
     },
   )
 
   const handleSettingsChange = (newSettings: Partial<BreathingSettings>) => {
-    console.log('âš™ï¸ Settings: Manual change:', newSettings)
+    console.log('⚙️ Settings: Manual change:', newSettings)
     setSettings(prev => ({ ...prev, ...newSettings }))
   }
 
   const handleSendMessage = () => {
     if (inputMessage.trim() && !isThinking) {
-      console.log('ðŸ’¬ Chat: Sending message:', inputMessage)
+      console.log('💬 Chat: Sending message:', inputMessage)
       sendMessage(inputMessage)
       setInputMessage('')
     }
   }
 
   const handleVoicePackLoaded = () => {
-    console.log('ðŸŽ¤ Voice pack loaded, checking language')
+    console.log('🎤 Voice pack loaded, checking language')
     if (currentVoicePack?.language) {
       const packLanguage = currentVoicePack.language as VoiceLanguage
       if (packLanguage === 'en' || packLanguage === 'hi') {
-        console.log('ðŸŒ Setting language from voice pack:', packLanguage)
+        console.log('🌐 Setting language from voice pack:', packLanguage)
         setCurrentLanguage(packLanguage)
       }
     }
@@ -239,7 +240,7 @@ export default function BreathingGuide() {
         )
 
       case 'guide':
-        console.log('ðŸŽ¨ Rendering ChatPanel with progress:', {
+        console.log('🎨 Rendering ChatPanel with progress:', {
           showProgress,
           hasProgress: !!currentProgress,
         })
@@ -275,9 +276,9 @@ export default function BreathingGuide() {
               onVoicePackSelected={handleVoicePackSelected}
               onCancelVoiceSelection={cancelVoiceSelection}
               onVoiceUpload={async (file, name) => {
-                console.log('ðŸ“¤ Chat: Voice upload requested:', name)
+                console.log('📤 Chat: Voice upload requested:', name)
                 try {
-                  // âœ… CRITICAL: This triggers SSE progress automatically
+                  // ✅ CRITICAL: This triggers SSE progress automatically
                   await createVoicePack({
                     name,
                     voiceSample: file,
@@ -285,10 +286,10 @@ export default function BreathingGuide() {
                     language: currentLanguage,
                     speed: settings.voiceSpeed,
                   })
-                  console.log('âœ… Chat: Voice pack created successfully')
+                  console.log('✅ Chat: Voice pack created successfully')
                   handleVoicePackLoaded()
                 } catch (error) {
-                  console.error('âŒ Chat: Failed to create voice pack:', error)
+                  console.error('❌ Chat: Failed to create voice pack:', error)
                 }
               }}
               onClose={() => setActiveTab('breathe')}
@@ -393,28 +394,33 @@ export default function BreathingGuide() {
                   }}
                   className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center text-2xl shadow-lg"
                 >
-                  ðŸ§˜
+                  🧘
                 </motion.div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
                     AI Yoga Guide
                   </h1>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Anulom Vilom â€¢ Alternate Nostril Breathing
+                    Anulom Vilom • Alternate Nostril Breathing
                   </p>
                 </div>
               </div>
 
-              {currentVoicePack && (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm font-medium flex items-center gap-2"
-                >
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  {currentVoicePack.name}
-                </motion.div>
-              )}
+              <div className="flex items-center gap-4">
+                {currentVoicePack && (
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm font-medium flex items-center gap-2"
+                  >
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    {currentVoicePack.name}
+                  </motion.div>
+                )}
+                
+                <div className="h-8 w-px bg-gray-200 dark:bg-gray-800 hidden sm:block"></div>
+                <UserMenu />
+              </div>
             </div>
           </motion.header>
 
@@ -427,7 +433,7 @@ export default function BreathingGuide() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center text-xl">
-                  ðŸ§˜
+                  🧘
                 </div>
                 <div>
                   <h1 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -439,12 +445,18 @@ export default function BreathingGuide() {
                 </div>
               </div>
 
-              {currentVoicePack && (
-                <div className="px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                  Active
+              <div className="flex items-center gap-2">
+                {currentVoicePack && (
+                  <div className="px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                    Active
+                  </div>
+                )}
+                
+                <div className="scale-75 origin-right">
+                  <UserMenu />
                 </div>
-              )}
+              </div>
             </div>
           </motion.header>
 

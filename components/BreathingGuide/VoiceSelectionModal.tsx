@@ -3,12 +3,12 @@
 // File Location: components/BreathingGuide/VoiceSelectionModal.tsx (REPLACE ENTIRE FILE)
 //
 // UX INNOVATION:
-// âœ… Modal doesn't close after selection
-// âœ… Transforms to "Preparing..." state immediately
-// âœ… Shows progress IN THE MODAL (contextual)
-// âœ… Smooth state transitions
-// âœ… User stays oriented
-// âœ… Auto-closes on completion (optional manual close)
+// ✅ Modal doesn't close after selection
+// ✅ Transforms to "Preparing..." state immediately
+// ✅ Shows progress IN THE MODAL (contextual)
+// ✅ Smooth state transitions
+// ✅ User stays oriented
+// ✅ Auto-closes on completion (optional manual close)
 
 'use client'
 
@@ -69,7 +69,7 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
     }
   }, [isOpen, currentVoicePack])
 
-  // âœ… Track state transitions
+  // ✅ Track state transitions
   useEffect(() => {
     if (!isOpen) return
 
@@ -136,7 +136,7 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
           onClick={e => e.stopPropagation()}
           className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden"
         >
-          {/* âœ… DYNAMIC HEADER - Changes based on state */}
+          {/* ✅ DYNAMIC HEADER - Changes based on state */}
           <motion.div
             layout
             className={`p-6 relative overflow-hidden ${
@@ -217,7 +217,7 @@ export const VoiceSelectionModal: React.FC<VoiceSelectionModalProps> = ({
             </div>
           </motion.div>
 
-          {/* âœ… DYNAMIC CONTENT - Transitions between states */}
+          {/* ✅ DYNAMIC CONTENT - Transitions between states */}
           <AnimatePresence mode="wait">
             {modalState === 'selecting' && (
               <motion.div
