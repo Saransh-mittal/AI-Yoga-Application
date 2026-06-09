@@ -111,7 +111,8 @@ export async function GET(
 
     const response = await fetch(url, {
         method: "GET",
-        headers: proxyHeaders
+        headers: proxyHeaders,
+        cache: "no-store"
     });
 
     // Handle SSE streams differently
