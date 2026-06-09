@@ -11,6 +11,7 @@
 import { BreathingPhase } from '@/models/types';
 import { AUDIO_FREQUENCIES } from '@/models/constants';
 import { voicePackService } from './voicePackService';
+import { indexedDbService } from './indexedDbService';
 
 interface AudioBufferCache {
   [key: string]: AudioBuffer;
@@ -113,16 +114,24 @@ class AudioService {
     }
 
     try {
-      const url = voicePackService.getAudioUrl(packId, phaseKey, variantIndex);
+      // 1. Try to load from IndexedDB first
+      const localPack = await indexedDbService.getVoicePack(packId);
+      let arrayBuffer: ArrayBuffer;
 
-      // Fetch audio file
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio: ${response.status}`);
+      if (localPack && localPack.audioFiles[phaseKey] && localPack.audioFiles[phaseKey][variantIndex]) {
+        const blob = localPack.audioFiles[phaseKey][variantIndex];
+        arrayBuffer = await blob.arrayBuffer();
+        console.log(`📦 Loaded buffer from IndexedDB cache: ${cacheKey}`);
+      } else {
+        // 2. Fallback to network fetch
+        const url = voicePackService.getAudioUrl(packId, phaseKey, variantIndex);
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch audio: ${response.status}`);
+        }
+        arrayBuffer = await response.arrayBuffer();
+        console.log(`🌐 Loaded buffer from network: ${cacheKey}`);
       }
-
-      // Get raw audio data
-      const arrayBuffer = await response.arrayBuffer();
 
       // Decode audio into AudioBuffer (preserves quality)
       const audioBuffer = await this.audioContext!.decodeAudioData(arrayBuffer);

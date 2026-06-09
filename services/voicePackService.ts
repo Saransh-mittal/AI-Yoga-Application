@@ -1,18 +1,10 @@
 // services/voicePackService.ts
-// Voice Pack Service - WITH SSE PROGRESS TRACKING
+// Voice Pack Service - WITH SSE PROGRESS TRACKING & INDEXEDDB CACHING
 // File Location: src/services/voicePackService.ts
-//
-// FEATURES:
-// - SSE (Server-Sent Events) for real-time progress tracking
-// - Two-step API flow: init â†’ get operation_id â†’ connect to SSE
-// - Progress callbacks for UI updates
-// - Audio caching and preloading
-// - Full CRUD operations for voice packs
-// - Backend connection testing
-// - Error handling and logging
 
 import { MessagesConfig, VoiceLanguage } from '@/models/types';
 import { ProgressData } from '@/components/BreathingGuide/VoiceProgressBar';
+import { indexedDbService, LocalVoicePack } from './indexedDbService';
 
 /**
  * VoicePack - Complete voice pack data with audio files and metadata
@@ -50,6 +42,7 @@ export interface VoicePackSummary {
   is_default?: boolean;
   breathing_technique?: string;
   style?: string;
+  source?: 'guided' | 'local';
 }
 
 /**
@@ -62,6 +55,7 @@ export interface CreateVoicePackParams {
   language?: VoiceLanguage;
   speed?: number;
   onProgress?: (progress: ProgressData) => void;
+  userEmail?: string; // Isolated per user
 }
 
 /**
@@ -72,6 +66,7 @@ export interface UpdateVoicePackParams {
   instructions: MessagesConfig;
   phasesToUpdate?: string[];
   onProgress?: (progress: ProgressData) => void;
+  userEmail?: string; // Needed for self-healing
 }
 
 /**
@@ -81,6 +76,7 @@ export interface UpdateVoicePackSpeedParams {
   packId: string;
   newSpeed: number;
   onProgress?: (progress: ProgressData) => void;
+  userEmail?: string; // Needed for self-healing
 }
 
 /**
@@ -89,28 +85,11 @@ export interface UpdateVoicePackSpeedParams {
 export interface ListVoicePacksParams {
   category?: 'default' | 'user';
   language?: string;
+  userEmail?: string; // Used to isolate user voice packs
 }
 
 /**
- * Voice Pack Service with SSE Progress Tracking
- *
- * This service implements a two-step process for long-running operations:
- * 1. Call init endpoint to start operation (returns operation_id)
- * 2. Connect to SSE endpoint to receive real-time progress
- * 3. Parse SSE events and call progress callback
- * 4. Resolve when completed, reject on error
- *
- * Key Concepts:
- * - EventSource: Browser API for Server-Sent Events (SSE)
- * - Server-Sent Events: One-way server-to-client real-time updates
- * - Callback pattern: onProgress called for each update
- * - Promise pattern: Async/await compatible
- *
- * Architecture:
- * - Single Service Instance: voicePackService singleton
- * - No React Dependency: Pure service logic
- * - Progress Callbacks: Hook manages state updates
- * - Audio Caching: Browser cache for loaded audio
+ * Voice Pack Service with SSE Progress Tracking and IndexedDB caching
  */
 class VoicePackService {
   private backendUrl: string;
@@ -122,45 +101,34 @@ class VoicePackService {
   }
 
   private getBackendUrl(): string {
-    if (!this.backendUrl) {
-      // Dynamic import to avoid SSR issues
-      const { getXttsBackendUrl } = require('@/lib/config');
-      this.backendUrl = getXttsBackendUrl();
-    }
-    return this.backendUrl;
+    return '';
   }
 
   /**
-   * Create voice pack with SSE progress tracking
-   *
-   * Flow:
-   * 1. POST to /api/voice-packs/init â†’ get operation_id
-   * 2. Connect to /api/voice-packs/progress/{operation_id} via EventSource
-   * 3. Receive progress updates via SSE
-   * 4. Call onProgress callback for each update
-   * 5. When status=completed, resolve with voice pack
-   * 6. When status=error, reject with error message
-   *
-   * Backend Endpoint:
-   * POST /api/voice-packs/init
-   * - Body: FormData with name, voice_sample, instructions, language, speed
-   * - Response: { operation_id: string }
-   *
-   * @param params - Creation parameters including progress callback
-   * @returns Promise that resolves when creation completes
-   * @throws Error if creation fails
-   *
-   * Example:
-   * ```
-   * const voicePack = await voicePackService.createVoicePack({
-   *   name: 'My Voice',
-   *   voiceSample: audioFile,
-   *   instructions: { 'left-inhale': [...], ... },
-   *   language: 'en',
-   *   speed: 1.0,
-   *   onProgress: (progress) => console.log(progress.percentage)
-   * })
-   * ```
+   * Helper to download all generated audio files as Blobs for local caching
+   */
+  private async downloadAudioBlobs(packId: string, audioFiles: VoicePack['audio_files']): Promise<{ [key: string]: Blob[] }> {
+    const downloadedBlobs: { [key: string]: Blob[] } = {};
+    const phaseKeys = ['left-inhale', 'right-exhale', 'right-inhale', 'left-exhale', 'hold'];
+
+    for (const phaseKey of phaseKeys) {
+      downloadedBlobs[phaseKey] = [];
+      const filenames = audioFiles[phaseKey as keyof typeof audioFiles] || [];
+      for (let i = 0; i < filenames.length; i++) {
+        const url = this.getAudioUrl(packId, phaseKey, i);
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to download audio variant ${i} for phase ${phaseKey}`);
+        }
+        const blob = await response.blob();
+        downloadedBlobs[phaseKey].push(blob);
+      }
+    }
+    return downloadedBlobs;
+  }
+
+  /**
+   * Create voice pack with SSE progress tracking and local IndexedDB cache
    */
   async createVoicePack(params: CreateVoicePackParams): Promise<VoicePack> {
     const {
@@ -170,9 +138,10 @@ class VoicePackService {
       language = 'en',
       speed = 1.0,
       onProgress,
+      userEmail,
     } = params;
 
-    console.log('ðŸ”¤ Initializing voice pack creation:', name);
+    console.log('🔄 Initializing voice pack creation:', name);
 
     try {
       // STEP 1: Initialize creation and get operation_id
@@ -183,7 +152,7 @@ class VoicePackService {
       formData.append('language', language);
       formData.append('speed', speed.toString());
 
-      const initResponse = await fetch(`${this.getBackendUrl()}/api/voice-packs/init`, {
+      const initResponse = await fetch(`${this.getBackendUrl()}/api/xtts-proxy/init`, {
         method: 'POST',
         body: formData,
       });
@@ -194,41 +163,62 @@ class VoicePackService {
       }
 
       const { operation_id } = await initResponse.json();
-      console.log('âœ… Operation initialized:', operation_id);
+      console.log('✅ Operation initialized:', operation_id);
 
       // STEP 2: Connect to SSE endpoint and wait for completion
       const voicePack = await this.connectToProgressStream(operation_id, onProgress);
 
-      console.log('âœ… Voice pack created:', voicePack.id);
+      // STEP 3: Cache the generated voice pack and audio Blobs locally in IndexedDB
+      if (userEmail) {
+        try {
+          if (onProgress) {
+            onProgress({
+              operation_id,
+              status: 'processing',
+              progress: 98.0,
+              message: 'Saving voice pack to local browser storage...'
+            });
+          }
+
+          const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
+
+          await indexedDbService.saveVoicePack({
+            id: voicePack.id,
+            userEmail,
+            name: voicePack.name,
+            language: voicePack.language,
+            speed: voicePack.speed,
+            instructions: voicePack.instructions,
+            createdAt: voicePack.created_at,
+            voiceSampleBlob: voiceSample,
+            audioFiles: audioBlobs
+          });
+
+          console.log(`✅ Cached voice pack ${voicePack.id} in IndexedDB for ${userEmail}`);
+        } catch (cacheError) {
+          console.error('⚠️ Failed to cache voice pack in IndexedDB:', cacheError);
+        }
+      }
+
+      console.log('✅ Voice pack created:', voicePack.id);
       return voicePack;
 
     } catch (error) {
-      console.error('âŒ Voice pack creation failed:', error);
+      console.error('❌ Voice pack creation failed:', error);
       throw error;
     }
   }
 
   /**
-   * Update voice pack instructions with SSE progress tracking
-   *
-   * Similar flow to createVoicePack but for updating instructions
-   *
-   * Backend Endpoint:
-   * POST /api/voice-packs/{packId}/update/init
-   * - Body: FormData with instructions, optional phases_to_update
-   * - Response: { operation_id: string }
-   *
-   * @param params - Update parameters
-   * @returns Promise that resolves when update completes
-   * @throws Error if update fails
+   * Update voice pack instructions with SSE progress tracking and self-healing on server restart
    */
   async updateVoicePack(params: UpdateVoicePackParams): Promise<VoicePack> {
-    const { packId, instructions, phasesToUpdate, onProgress } = params;
+    const { packId, instructions, phasesToUpdate, onProgress, userEmail } = params;
 
-    console.log('ðŸ”¤ Initializing voice pack update:', packId);
+    console.log('🔄 Initializing voice pack update:', packId);
 
     try {
-      // STEP 1: Initialize update and get operation_id
+      // STEP 1: Initialize update
       const formData = new FormData();
       formData.append('instructions', JSON.stringify(instructions));
 
@@ -237,12 +227,44 @@ class VoicePackService {
       }
 
       const initResponse = await fetch(
-        `${this.getBackendUrl()}/api/voice-packs/${packId}/update/init`,
+        `${this.getBackendUrl()}/api/xtts-proxy/${packId}/update/init`,
         {
           method: 'POST',
           body: formData,
         }
       );
+
+      // Self-healing: if server returned 404 (not found) and we have local backup, re-create voice pack
+      if (initResponse.status === 404 && userEmail) {
+        console.warn(`⚠️ Voice pack ${packId} not found on server. Attempting auto-recovery from IndexedDB...`);
+        const localPack = await indexedDbService.getVoicePack(packId);
+        if (localPack && localPack.voiceSampleBlob) {
+          if (onProgress) {
+            onProgress({
+              operation_id: 'recovery',
+              status: 'processing',
+              progress: 5.0,
+              message: 'Server restarted. Recovering voice pack from browser storage...'
+            });
+          }
+
+          // Trigger recreate with the stored sample and new instructions
+          const voiceSampleFile = new File([localPack.voiceSampleBlob], 'voice_sample.wav', { type: 'audio/wav' });
+          const newPack = await this.createVoicePack({
+            name: localPack.name,
+            voiceSample: voiceSampleFile,
+            instructions: instructions, // use the new instructions
+            language: localPack.language as any,
+            speed: localPack.speed,
+            userEmail,
+            onProgress
+          });
+
+          // Clean up old local record
+          await indexedDbService.deleteVoicePack(packId);
+          return newPack;
+        }
+      }
 
       if (!initResponse.ok) {
         const error = await initResponse.json();
@@ -250,40 +272,54 @@ class VoicePackService {
       }
 
       const { operation_id } = await initResponse.json();
-      console.log('âœ… Update initialized:', operation_id);
+      console.log('✅ Update initialized:', operation_id);
 
       // STEP 2: Connect to SSE and wait for completion
       const voicePack = await this.connectToProgressStream(operation_id, onProgress);
 
-      console.log('âœ… Voice pack updated');
+      // STEP 3: Update local IndexedDB cache with the new audio files
+      if (userEmail) {
+        try {
+          if (onProgress) {
+            onProgress({
+              operation_id,
+              status: 'processing',
+              progress: 98.0,
+              message: 'Updating local browser storage...'
+            });
+          }
+
+          const localPack = await indexedDbService.getVoicePack(packId);
+          if (localPack) {
+            const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
+            localPack.instructions = voicePack.instructions;
+            localPack.audioFiles = audioBlobs;
+            await indexedDbService.saveVoicePack(localPack);
+            console.log(`✅ Updated voice pack ${packId} in IndexedDB.`);
+          }
+        } catch (cacheError) {
+          console.error('⚠️ Failed to update local IndexedDB cache:', cacheError);
+        }
+      }
+
+      console.log('✅ Voice pack updated');
       this.clearAudioCache(packId);
 
       return voicePack;
 
     } catch (error) {
-      console.error('âŒ Voice pack update failed:', error);
+      console.error('❌ Voice pack update failed:', error);
       throw error;
     }
   }
 
   /**
-   * Update voice pack speed with SSE progress tracking
-   *
-   * Changes playback speed of all audio files in the pack
-   *
-   * Backend Endpoint:
-   * POST /api/voice-packs/{packId}/update-speed/init
-   * - Body: FormData with new_speed
-   * - Response: { operation_id: string }
-   *
-   * @param params - Speed update parameters
-   * @returns Promise that resolves when update completes
-   * @throws Error if update fails
+   * Update voice pack speed with SSE progress tracking and self-healing on server restart
    */
   async updateVoicePackSpeed(params: UpdateVoicePackSpeedParams): Promise<VoicePack> {
-    const { packId, newSpeed, onProgress } = params;
+    const { packId, newSpeed, onProgress, userEmail } = params;
 
-    console.log('ðŸ”¤ Initializing speed update:', packId, newSpeed);
+    console.log('🔄 Initializing speed update:', packId, newSpeed);
 
     try {
       // STEP 1: Initialize speed update
@@ -291,12 +327,44 @@ class VoicePackService {
       formData.append('new_speed', newSpeed.toString());
 
       const initResponse = await fetch(
-        `${this.getBackendUrl()}/api/voice-packs/${packId}/update-speed/init`,
+        `${this.getBackendUrl()}/api/xtts-proxy/${packId}/update-speed/init`,
         {
           method: 'POST',
           body: formData,
         }
       );
+
+      // Self-healing: if server returned 404 (not found) and we have local backup, re-create voice pack
+      if (initResponse.status === 404 && userEmail) {
+        console.warn(`⚠️ Voice pack ${packId} not found on server. Attempting auto-recovery from IndexedDB...`);
+        const localPack = await indexedDbService.getVoicePack(packId);
+        if (localPack && localPack.voiceSampleBlob) {
+          if (onProgress) {
+            onProgress({
+              operation_id: 'recovery',
+              status: 'processing',
+              progress: 5.0,
+              message: 'Server restarted. Recovering voice pack from browser storage...'
+            });
+          }
+
+          // Trigger recreate with the stored sample and new speed
+          const voiceSampleFile = new File([localPack.voiceSampleBlob], 'voice_sample.wav', { type: 'audio/wav' });
+          const newPack = await this.createVoicePack({
+            name: localPack.name,
+            voiceSample: voiceSampleFile,
+            instructions: localPack.instructions,
+            language: localPack.language as any,
+            speed: newSpeed, // use the new speed
+            userEmail,
+            onProgress
+          });
+
+          // Clean up old local record
+          await indexedDbService.deleteVoicePack(packId);
+          return newPack;
+        }
+      }
 
       if (!initResponse.ok) {
         const error = await initResponse.json();
@@ -304,89 +372,81 @@ class VoicePackService {
       }
 
       const { operation_id } = await initResponse.json();
-      console.log('âœ… Speed update initialized:', operation_id);
+      console.log('✅ Speed update initialized:', operation_id);
 
       // STEP 2: Connect to SSE and wait for completion
       const voicePack = await this.connectToProgressStream(operation_id, onProgress);
 
-      console.log('âœ… Speed updated');
+      // STEP 3: Update local IndexedDB cache with the new audio files
+      if (userEmail) {
+        try {
+          if (onProgress) {
+            onProgress({
+              operation_id,
+              status: 'processing',
+              progress: 98.0,
+              message: 'Updating local browser storage...'
+            });
+          }
+
+          const localPack = await indexedDbService.getVoicePack(packId);
+          if (localPack) {
+            const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
+            localPack.speed = voicePack.speed;
+            localPack.audioFiles = audioBlobs;
+            await indexedDbService.saveVoicePack(localPack);
+            console.log(`✅ Updated speed for voice pack ${packId} in IndexedDB.`);
+          }
+        } catch (cacheError) {
+          console.error('⚠️ Failed to update local IndexedDB cache:', cacheError);
+        }
+      }
+
+      console.log('✅ Speed updated');
       this.clearAudioCache(packId);
 
       return voicePack;
 
     } catch (error) {
-      console.error('âŒ Speed update failed:', error);
+      console.error('❌ Speed update failed:', error);
       throw error;
     }
   }
 
   /**
    * Connect to SSE progress stream
-   *
-   * This is the core SSE handling logic that:
-   * 1. Creates EventSource connection
-   * 2. Parses incoming SSE messages
-   * 3. Calls progress callback for each update
-   * 4. Resolves/rejects promise based on final status
-   *
-   * SSE Message Format:
-   * ```
-   * data: {
-   *   "status": "processing",
-   *   "progress": 45.5,
-   *   "message": "Generating audio for left-inhale phase...",
-   *   "voice_pack_id": "pack_123",
-   *   "percentage": 45.5
-   * }
-   * ```
-   *
-   * Key Learning: EventSource automatically handles:
-   * - Connection establishment
-   * - Reconnection on temporary disconnect
-   * - Message parsing
-   * - Cleanup on close
-   *
-   * @param operationId - The operation to track
-   * @param onProgress - Callback for progress updates
-   * @returns Promise<VoicePack> when operation completes
-   * @private
    */
   private async connectToProgressStream(
     operationId: string,
     onProgress?: (progress: ProgressData) => void
   ): Promise<VoicePack> {
     return new Promise((resolve, reject) => {
-      const sseUrl = `${this.getBackendUrl()}/api/voice-packs/progress/${operationId}`;
-      console.log('ðŸ“¡ Connecting to SSE:', sseUrl);
+      const sseUrl = `${this.getBackendUrl()}/api/xtts-proxy/progress/${operationId}`;
+      console.log('📡 Connecting to SSE:', sseUrl);
 
       const eventSource = new EventSource(sseUrl);
       let lastVoicePackId: string | null = null;
 
-      // Handle incoming messages
       eventSource.onmessage = (event) => {
         try {
           const progress: ProgressData = JSON.parse(event.data);
 
           console.log(
-            `ðŸ“Š Progress: ${progress.progress?.toFixed(1) || '?'}% - ${progress.message}`
+            `📊 Progress: ${progress.progress?.toFixed(1) || '?'}% - ${progress.message}`
           );
 
-          // Store voice_pack_id for final fetch
           if ((progress as any).voice_pack_id) {
             lastVoicePackId = (progress as any).voice_pack_id;
           }
 
-          // Call progress callback if provided
           if (onProgress) {
             onProgress(progress);
           }
 
-          // Handle completion
           if (progress.status === 'completed') {
-            console.log('âœ… Operation completed');
+            console.log('✅ Operation completed');
             eventSource.close();
 
-            // Fetch final voice pack metadata
             if (lastVoicePackId) {
               this.getVoicePack(lastVoicePackId)
                 .then((voicePack) => {
@@ -402,9 +462,8 @@ class VoicePackService {
             }
           }
 
-          // Handle error
           if (progress.status === 'error') {
-            console.error('âŒ Operation failed:', (progress as any).error_detail);
+            console.error('❌ Operation failed:', (progress as any).error_detail);
             eventSource.close();
             reject(new Error((progress as any).error_detail || progress.message));
           }
@@ -414,17 +473,15 @@ class VoicePackService {
         }
       };
 
-      // Handle connection errors
       eventSource.onerror = (error) => {
-        console.error('âŒ SSE connection error:', error);
+        console.error('❌ SSE connection error:', error);
         eventSource.close();
         reject(new Error('SSE connection failed'));
       };
 
-      // Timeout after 10 minutes
       setTimeout(() => {
         if (eventSource.readyState !== EventSource.CLOSED) {
-          console.warn('â±ï¸ SSE timeout');
+          console.warn('⏱️ SSE timeout');
           eventSource.close();
           reject(new Error('Operation timeout'));
         }
@@ -433,18 +490,35 @@ class VoicePackService {
   }
 
   /**
-   * Get voice pack metadata by ID
-   *
-   * Backend Endpoint:
-   * GET /api/voice-packs/{packId}
-   * - Response: VoicePack object
-   *
-   * @param packId - Voice pack ID
-   * @returns Promise<VoicePack | null> Voice pack or null if not found
+   * Get voice pack metadata by ID (Checks IndexedDB first, falls back to server)
    */
   async getVoicePack(packId: string): Promise<VoicePack | null> {
     try {
-      const response = await fetch(`${this.getBackendUrl()}/api/voice-packs/${packId}`);
+      // 1. Check local IndexedDB cache first
+      const localPack = await indexedDbService.getVoicePack(packId);
+      if (localPack) {
+        console.log(`📦 Serving metadata for ${packId} from IndexedDB cache.`);
+        return {
+          id: localPack.id,
+          name: localPack.name,
+          created_at: localPack.createdAt,
+          language: localPack.language,
+          speed: localPack.speed,
+          audio_files: {
+            'left-inhale': localPack.audioFiles['left-inhale']?.map((_, i) => `left-inhale_variant_${i}.wav`) || [],
+            'right-exhale': localPack.audioFiles['right-exhale']?.map((_, i) => `right-exhale_variant_${i}.wav`) || [],
+            'right-inhale': localPack.audioFiles['right-inhale']?.map((_, i) => `right-inhale_variant_${i}.wav`) || [],
+            'left-exhale': localPack.audioFiles['left-exhale']?.map((_, i) => `left-exhale_variant_${i}.wav`) || [],
+            'hold': localPack.audioFiles['hold']?.map((_, i) => `hold_variant_${i}.wav`) || []
+          },
+          instructions: localPack.instructions,
+          affirmations: localPack.instructions, // fallback
+          total_audio_files: Object.values(localPack.audioFiles).reduce((acc, arr) => acc + arr.length, 0)
+        };
+      }
+
+      // 2. Fetch from backend if not in local IndexedDB
+      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy/${packId}`);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -462,49 +536,58 @@ class VoicePackService {
   }
 
   /**
-   * List all available voice packs with optional filtering
-   *
-   * Backend Endpoint:
-   * GET /api/voice-packs
-   * - Response: { voice_packs: VoicePackSummary[] }
-   *
-   * Optional Query Parameters:
-   * - ?category=default - Only system voice packs
-   * - ?category=user - Only user-created packs
-   * - ?language=en - Filter by language
-   *
-   * @param params - Optional filter parameters (category, language)
-   * @returns Promise<VoicePackSummary[]> Array of voice pack summaries
-   *
-   * Examples:
-   * - listVoicePacks() - Get all packs
-   * - listVoicePacks({ category: 'default' }) - Get only default/system packs
-   * - listVoicePacks({ category: 'user' }) - Get only user-created packs
-   * - listVoicePacks({ language: 'en' }) - Get only English packs
-   * - listVoicePacks({ category: 'default', language: 'en' }) - Get default English packs
+   * List all available voice packs.
+   * - System default packs are fetched from the backend.
+   * - Custom voice packs are retrieved exclusively from local IndexedDB (filtered by user email).
    */
   async listVoicePacks(params?: ListVoicePacksParams): Promise<VoicePackSummary[]> {
     try {
-      // Build query string from parameters
-      const queryParams = new URLSearchParams();
-      if (params?.category) {
-        queryParams.append('category', params.category);
+      const category = params?.category;
+      const language = params?.language;
+      const userEmail = params?.userEmail;
+
+      let systemDefaults: VoicePackSummary[] = [];
+      let userPacks: VoicePackSummary[] = [];
+
+      // 1. Fetch system defaults from backend (if not requesting only user packs)
+      if (category !== 'user') {
+        const queryParams = new URLSearchParams();
+        queryParams.append('category', 'default');
+        if (language) {
+          queryParams.append('language', language);
+        }
+
+        const url = `${this.getBackendUrl()}/api/xtts-proxy?${queryParams.toString()}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          systemDefaults = Array.isArray(data) ? data : data.voice_packs || [];
+          systemDefaults = systemDefaults.map(p => ({ ...p, source: 'guided' }));
+        }
       }
-      if (params?.language) {
-        queryParams.append('language', params.language);
+
+      // 2. Retrieve custom user voice packs from IndexedDB (if userEmail is available and not requesting defaults only)
+      if (category !== 'default' && userEmail) {
+        const localPacks = await indexedDbService.listVoicePacks(userEmail);
+        userPacks = localPacks.map(pack => ({
+          id: pack.id,
+          name: pack.name,
+          created_at: pack.createdAt,
+          total_audio_files: Object.values(pack.audioFiles).reduce((acc, arr) => acc + arr.length, 0),
+          language: pack.language,
+          source: 'local'
+        }));
+
+        if (language) {
+          userPacks = userPacks.filter(p => p.language?.toLowerCase() === language.toLowerCase());
+        }
       }
 
-      const queryString = queryParams.toString();
-      const url = `${this.getBackendUrl()}/api/voice-packs${queryString ? `?${queryString}` : ''}`;
+      // 3. Merge system default packs and local user packs
+      const packs = [...systemDefaults, ...userPacks];
 
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error('Failed to list voice packs');
-      }
-
-      const data = await response.json();
-      return Array.isArray(data) ? data : data.voice_packs || [];
+      console.log(`📋 Listed ${packs.length} voice packs (${systemDefaults.length} system defaults, ${userPacks.length} user local)`);
+      return packs;
 
     } catch (error) {
       console.error('Failed to list voice packs:', error);
@@ -513,24 +596,19 @@ class VoicePackService {
   }
 
   /**
-   * Delete a voice pack permanently
-   *
-   * Backend Endpoint:
-   * DELETE /api/voice-packs/{packId}
-   * - Response: { status: "deleted" }
-   *
-   * @param packId - Voice pack ID to delete
-   * @returns Promise<boolean> True if successful, false otherwise
+   * Delete a voice pack permanently from backend and local IndexedDB
    */
   async deleteVoicePack(packId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.getBackendUrl()}/api/voice-packs/${packId}`, {
-        method: 'DELETE',
-      });
+      // 1. Delete from IndexedDB
+      await indexedDbService.deleteVoicePack(packId);
 
-      if (!response.ok) {
-        return false;
-      }
+      // 2. Attempt to delete from backend (best-effort)
+      await fetch(`${this.getBackendUrl()}/api/xtts-proxy/${packId}`, {
+        method: 'DELETE',
+      }).catch(err => {
+        console.warn('Backend deletion failed or skipped (likely server offline/restarted):', err);
+      });
 
       this.clearAudioCache(packId);
       return true;
@@ -543,42 +621,35 @@ class VoicePackService {
 
   /**
    * Get audio file URL for a specific phase variant
-   *
-   * URL Format:
-   * /api/voice-packs/{packId}/audio/{phaseKey}/{variantIndex}
-   *
-   * @param packId - Voice pack ID
-   * @param phaseKey - Breathing phase key (left-inhale, right-exhale, etc.)
-   * @param variantIndex - Instruction variant index (0, 1, 2, ...)
-   * @returns Audio URL string
    */
   getAudioUrl(packId: string, phaseKey: string, variantIndex: number): string {
-    return `${this.getBackendUrl()}/api/voice-packs/${packId}/audio/${phaseKey}/${variantIndex}`;
+    return `${this.getBackendUrl()}/api/xtts-proxy/${packId}/audio/${phaseKey}/${variantIndex}`;
   }
 
   /**
    * Pre-load all audio files for a voice pack into browser cache
-   *
-   * This loads HTMLAudioElements for all audio files, which:
-   * - Ensures smooth playback when needed
-   * - Catches loading errors early
-   * - Stores in audioCache for instant access
-   *
-   * @param voicePack - Voice pack to preload
-   * @returns Promise that resolves when all audio is loaded
    */
   async preloadVoicePack(voicePack: VoicePack): Promise<void> {
     const promises: Promise<void>[] = [];
 
+    // Check if it is a local pack in IndexedDB
+    const localPack = await indexedDbService.getVoicePack(voicePack.id);
+
     for (const [phaseKey, filenames] of Object.entries(voicePack.audio_files)) {
       for (let i = 0; i < filenames.length; i++) {
-        const url = this.getAudioUrl(voicePack.id, phaseKey, i);
         const cacheKey = `${voicePack.id}-${phaseKey}-${i}`;
 
         if (this.audioCache.has(cacheKey)) {
           continue;
         }
 
+        // If local, we don't need to load a network Audio element; audioService will decode directly from Blob.
+        // But we can create a dummy object URL to cache it if needed, or simply skip since audioService handles IndexedDB directly.
+        if (localPack) {
+          continue;
+        }
+
+        const url = this.getAudioUrl(voicePack.id, phaseKey, i);
         const promise = new Promise<void>((resolve, reject) => {
           const audio = new Audio(url);
           audio.preload = 'auto';
@@ -605,11 +676,6 @@ class VoicePackService {
 
   /**
    * Get cached audio element for a specific phase variant
-   *
-   * @param packId - Voice pack ID
-   * @param phaseKey - Breathing phase key
-   * @param variantIndex - Instruction variant index
-   * @returns HTMLAudioElement or null if not cached
    */
   getCachedAudio(packId: string, phaseKey: string, variantIndex: number): HTMLAudioElement | null {
     const cacheKey = `${packId}-${phaseKey}-${variantIndex}`;
@@ -618,9 +684,6 @@ class VoicePackService {
 
   /**
    * Clear audio cache for specific pack or all packs
-   *
-   * @param packId - Optional pack ID. If provided, clears only that pack's cache
-   *                 If not provided, clears entire audio cache
    */
   clearAudioCache(packId?: string): void {
     if (packId) {
@@ -635,25 +698,12 @@ class VoicePackService {
   }
 
   /**
-   * Test backend connection
-   *
-   * Backend Endpoint:
-   * GET /
-   * - Response: { status: "healthy", ... }
-   *
-   * @returns Promise<boolean> True if backend is healthy, false otherwise
+   * Test backend connection via proxy
    */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.getBackendUrl()}/`);
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = await response.json();
-      return data.status === 'healthy';
-
+      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy`);
+      return response.ok;
     } catch (error) {
       console.error('Backend connection test failed:', error);
       return false;
@@ -661,24 +711,17 @@ class VoicePackService {
   }
 
   /**
-   * Get backend status information
-   *
-   * Backend Endpoint:
-   * GET /
-   * - Response: { status: string, version: string, timestamp: string, ... }
-   *
-   * @returns Promise<any> Backend status object or null if error
+   * Get backend status information via proxy
    */
   async getBackendStatus(): Promise<any> {
     try {
-      const response = await fetch(`${this.getBackendUrl()}/`);
+      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy`);
 
       if (!response.ok) {
         throw new Error('Backend not responding');
       }
 
       return await response.json();
-
     } catch (error) {
       console.error('Failed to get backend status:', error);
       return null;
@@ -686,15 +729,4 @@ class VoicePackService {
   }
 }
 
-/**
- * Singleton instance of VoicePackService
- * Use this throughout the application
- *
- * Example:
- * ```
- * import { voicePackService } from '@/services/voicePackService'
- *
- * const packs = await voicePackService.listVoicePacks()
- * ```
- */
 export const voicePackService = new VoicePackService();

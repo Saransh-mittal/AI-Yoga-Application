@@ -1,13 +1,9 @@
 // hooks/useVoicePack.ts
-// Voice Pack Hook - WITH SSE PROGRESS TRACKING
-// File Location: hooks/useVoicePack.ts (REPLACE ENTIRE FILE)
-//
-// EDUCATIONAL NOTES:
-// - State management for progress data
-// - Callback pattern for progress updates
-// - Clean separation of concerns: service handles SSE, hook manages state
+// Voice Pack Hook - WITH SSE PROGRESS TRACKING & INDEXEDDB SUPPORT
+// File Location: hooks/useVoicePack.ts
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { MessagesConfig, VoiceLanguage } from '@/models/types';
 import { voicePackService, VoicePack, VoicePackSummary } from '@/services/voicePackService';
 import { audioService } from '@/services/audioService';
@@ -64,26 +60,13 @@ interface UseVoicePackReturn {
 }
 
 /**
- * Voice Pack Hook with SSE Progress Tracking
- *
- * This hook manages:
- * 1. Voice pack state (current pack, available packs)
- * 2. Progress state (current progress data, show/hide)
- * 3. Operations (create, load, update, delete)
- * 4. SSE progress callbacks
- *
- * Key Pattern: Progress Callback
- * - Service calls onProgress for each SSE update
- * - Hook updates state with progress data
- * - Component displays progress bar based on state
- *
- * State Flow:
- * User clicks create â†’ isLoading=true, showProgress=true
- * â†’ Service starts SSE connection
- * â†’ onProgress called for each update â†’ currentProgress updated
- * â†’ Operation completes â†’ isLoading=false, showProgress=false after delay
+ * Voice Pack Hook with IndexedDB support and SSE progress tracking.
+ * Scopes custom voice pack creation, listing, and updates by NextAuth user email.
  */
 export const useVoicePack = (): UseVoicePackReturn => {
+  const { data: session, status } = useSession();
+  const userEmail = session?.user?.email || undefined;
+
   const [currentVoicePack, setCurrentVoicePack] = useState<VoicePack | null>(null);
   const [availableVoicePacks, setAvailableVoicePacks] = useState<VoicePackSummary[]>([]);
   const [userDefaultPackId, setUserDefaultPackId] = useState<string | null>(null);
@@ -94,11 +77,9 @@ export const useVoicePack = (): UseVoicePackReturn => {
   // Progress tracking state
   const [currentProgress, setCurrentProgress] = useState<ProgressData | null>(null);
   const [showProgress, setShowProgress] = useState<boolean>(false);
-  /**
- * Default guided voice packs (pre-generated from backend)
- * These are the system-provided voices like Anulom Vilom guided packs
- */
-const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([])
+
+  // Default guided voice packs
+  const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -109,41 +90,42 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
 
   const refreshVoicePackList = useCallback(async () => {
     try {
-      const packs = await voicePackService.listVoicePacks();
+      const packs = await voicePackService.listVoicePacks({ userEmail });
       setAvailableVoicePacks(packs);
     } catch (err) {
       console.error('Failed to load voice packs:', err);
       setError('Failed to load voice pack list');
     }
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     const autoLoadDefaultVoice = async () => {
       if (typeof window === 'undefined') return;
+      if (status === 'loading') return; // Wait for NextAuth to resolve session
       if (hasAttemptedAutoLoad) return;
 
       setHasAttemptedAutoLoad(true);
 
       try {
-        console.log('ðŸ” Auto-loading default voice pack...');
+        console.log('🔍 Auto-loading default voice pack...');
 
         await refreshVoicePackList();
 
         const preferredDefaultId = defaultVoicePreference.getUserDefaultVoicePack();
 
         if (!preferredDefaultId) {
-          console.log('â„¹ï¸ No default voice pack set');
+          console.log('ℹ️ No default voice pack set');
           return;
         }
 
-        console.log(`ðŸŽ¯ Loading default: ${preferredDefaultId}`);
+        console.log(`🎯 Loading default: ${preferredDefaultId}`);
 
         const pack = await voicePackService.getVoicePack(preferredDefaultId);
         if (pack) {
           await voicePackService.preloadVoicePack(pack);
           await audioService.setVoicePack(pack.id);
           setCurrentVoicePack(pack);
-          console.log('âœ… Default voice pack loaded');
+          console.log('✅ Default voice pack loaded');
         }
       } catch (err) {
         console.error('Failed to auto-load default voice:', err);
@@ -151,31 +133,24 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     };
 
     autoLoadDefaultVoice();
-  }, [hasAttemptedAutoLoad, refreshVoicePackList]);
+  }, [hasAttemptedAutoLoad, status, userEmail, refreshVoicePackList]);
 
   useEffect(() => {
-    refreshVoicePackList();
-  }, [refreshVoicePackList]);
+    if (status !== 'loading') {
+      refreshVoicePackList();
+    }
+  }, [refreshVoicePackList, status]);
 
   /**
    * Progress callback handler
-   *
-   * Called by voicePackService for each SSE progress update.
-   * Updates the currentProgress state which triggers re-render
-   * of the progress bar component.
-   *
-   * Learning: Callback Pattern
-   * - Service doesn't know about React state
-   * - Hook provides callback that updates state
-   * - Clean separation between service logic and UI state
    */
   const handleProgress = useCallback((progress: ProgressData) => {
-    console.log(`ðŸ“Š Progress update: ${progress.progress.toFixed(1)}%`);
+    console.log(`📊 Progress update: ${progress.progress?.toFixed(1) || '?'}%`);
     setCurrentProgress(progress);
   }, []);
 
   /**
-   * Create voice pack with progress tracking
+   * Create voice pack with userEmail scope
    */
   const createVoicePack = useCallback(async (params: {
     name: string;
@@ -184,7 +159,7 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     language?: VoiceLanguage;
     speed?: number;
   }) => {
-    console.log('ðŸŽ¯ Creating voice pack with progress tracking...');
+    console.log('🎯 Creating voice pack with progress tracking...');
 
     setIsLoading(true);
     setError(null);
@@ -192,34 +167,32 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     setCurrentProgress(null);
 
     try {
-      // Pass progress callback to service
       const voicePack = await voicePackService.createVoicePack({
         name: params.name,
         voiceSample: params.voiceSample,
         instructions: params.instructions,
         language: params.language || 'en',
         speed: params.speed || 1.0,
-        onProgress: handleProgress, // This is the key!
+        onProgress: handleProgress,
+        userEmail,
       });
 
-      console.log('âœ… Voice pack created:', voicePack.id);
+      console.log('✅ Voice pack created:', voicePack.id);
 
       await refreshVoicePackList();
       await voicePackService.preloadVoicePack(voicePack);
       await audioService.setVoicePack(voicePack.id);
       setCurrentVoicePack(voicePack);
 
-      // Keep progress visible for 2 seconds after completion
       setTimeout(() => {
         setShowProgress(false);
         setCurrentProgress(null);
       }, 2000);
 
     } catch (err) {
-      console.error('âŒ Voice pack creation failed:', err);
+      console.error('❌ Voice pack creation failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to create voice pack');
 
-      // Keep error visible
       setTimeout(() => {
         setShowProgress(false);
       }, 5000);
@@ -228,7 +201,7 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     } finally {
       setIsLoading(false);
     }
-  }, [handleProgress, refreshVoicePackList]);
+  }, [handleProgress, refreshVoicePackList, userEmail]);
 
   /**
    * Load voice pack
@@ -259,14 +232,14 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
   }, []);
 
   /**
-   * Update voice pack - SIMPLIFIED VERSION
+   * Update voice pack instructions with self-healing recovery support
    */
   const updateVoicePack = useCallback(async (params: {
     packId: string;
     instructions: MessagesConfig;
     phasesToUpdate?: string[];
   }) => {
-    console.log('ðŸ”„ Updating voice pack...');
+    console.log('🔄 Updating voice pack...');
 
     setIsLoading(true);
     setError(null);
@@ -274,33 +247,37 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     setCurrentProgress(null);
 
     try {
-      // Pass progress callback
       const voicePack = await voicePackService.updateVoicePack({
         packId: params.packId,
         instructions: params.instructions,
         phasesToUpdate: params.phasesToUpdate,
         onProgress: handleProgress,
+        userEmail,
       });
 
-      console.log('âœ… Voice pack updated');
+      console.log('✅ Voice pack updated');
 
-      // Refresh list and reload the pack
       await refreshVoicePackList();
 
-      if (currentVoicePack?.id === params.packId) {
+      if (currentVoicePack?.id === params.packId || currentVoicePack?.id === voicePack.id) {
         await voicePackService.preloadVoicePack(voicePack);
         await audioService.setVoicePack(voicePack.id);
         setCurrentVoicePack(voicePack);
+
+        // If the ID changed due to self-healing regeneration, update default preferences
+        if (currentVoicePack?.id === params.packId && voicePack.id !== params.packId) {
+          defaultVoicePreference.setUserDefaultVoicePack(voicePack.id);
+          setUserDefaultPackId(voicePack.id);
+        }
       }
 
-      // Keep progress visible for 2 seconds
       setTimeout(() => {
         setShowProgress(false);
         setCurrentProgress(null);
       }, 2000);
 
     } catch (err) {
-      console.error('âŒ Update failed:', err);
+      console.error('❌ Update failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to update voice pack');
 
       setTimeout(() => {
@@ -311,16 +288,16 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     } finally {
       setIsLoading(false);
     }
-  }, [handleProgress, currentVoicePack, refreshVoicePackList]);
+  }, [handleProgress, currentVoicePack, refreshVoicePackList, userEmail]);
 
   /**
-   * Update voice pack speed with progress tracking
+   * Update voice pack speed with self-healing recovery support
    */
   const updateVoicePackSpeed = useCallback(async (params: {
     packId: string;
     newSpeed: number;
   }) => {
-    console.log('ðŸŽšï¸ Updating speed with progress tracking...');
+    console.log('🎚️ Updating speed with progress tracking...');
 
     setIsLoading(true);
     setError(null);
@@ -328,31 +305,36 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     setCurrentProgress(null);
 
     try {
-      // Pass progress callback
       const voicePack = await voicePackService.updateVoicePackSpeed({
         packId: params.packId,
         newSpeed: params.newSpeed,
         onProgress: handleProgress,
+        userEmail,
       });
 
-      console.log('âœ… Speed updated');
+      console.log('✅ Speed updated');
 
       await refreshVoicePackList();
 
-      if (currentVoicePack?.id === params.packId) {
+      if (currentVoicePack?.id === params.packId || currentVoicePack?.id === voicePack.id) {
         await voicePackService.preloadVoicePack(voicePack);
         await audioService.setVoicePack(voicePack.id);
         setCurrentVoicePack(voicePack);
+
+        // If the ID changed due to self-healing regeneration, update default preferences
+        if (currentVoicePack?.id === params.packId && voicePack.id !== params.packId) {
+          defaultVoicePreference.setUserDefaultVoicePack(voicePack.id);
+          setUserDefaultPackId(voicePack.id);
+        }
       }
 
-      // Keep progress visible for 2 seconds
       setTimeout(() => {
         setShowProgress(false);
         setCurrentProgress(null);
       }, 2000);
 
     } catch (err) {
-      console.error('âŒ Speed update failed:', err);
+      console.error('❌ Speed update failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to update speed');
 
       setTimeout(() => {
@@ -363,7 +345,7 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     } finally {
       setIsLoading(false);
     }
-  }, [handleProgress, currentVoicePack, refreshVoicePackList]);
+  }, [handleProgress, currentVoicePack, refreshVoicePackList, userEmail]);
 
   /**
    * Delete voice pack
@@ -422,7 +404,7 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     try {
       defaultVoicePreference.setUserDefaultVoicePack(packId);
       setUserDefaultPackId(packId);
-      console.log(`âœ… Set ${packId} as default`);
+      console.log(`✅ Set ${packId} as default`);
     } catch (err) {
       console.error('Failed to set default:', err);
       setError('Failed to set default');
@@ -435,7 +417,7 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
     try {
       defaultVoicePreference.clearUserDefaultVoicePack();
       setUserDefaultPackId(defaultVoicePreference.getUserDefaultVoicePack());
-      console.log('âœ… Cleared default');
+      console.log('✅ Cleared default');
     } catch (err) {
       console.error('Failed to clear default:', err);
     }
@@ -452,25 +434,11 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
 
   /**
    * Fetch default guided voice packs from backend
-   *
-   * These are pre-generated voice packs (e.g., Anulom Vilom guided packs)
-   * that come from the system and are available to all users.
-   *
-   * Now uses voicePackService.listVoicePacks({ category: 'default' })
-   * which correctly routes to the backend URL.
-   *
-   * Key Learning: Always use service layer for API calls instead of direct fetch
-   * - Service layer handles backend URL configuration
-   * - Centralizes API logic for easier maintenance
-   * - Provides consistent error handling
-   * - Makes testing easier with mock services
    */
   const fetchDefaultVoices = useCallback(async () => {
     try {
-      // Use voicePackService instead of direct fetch - this correctly uses backend URL
       const defaultPacks = await voicePackService.listVoicePacks({ category: 'default' });
 
-      // Filter only default/guided packs (extra safety check)
       const guidedPacks = defaultPacks.filter(
         (pack) => pack.id.startsWith('default_') || pack.is_default === true
       );
@@ -479,19 +447,16 @@ const [defaultVoicePacks, setDefaultVoicePacks] = useState<VoicePackSummary[]>([
       console.log(`✅ Loaded ${guidedPacks.length} default voice packs`);
     } catch (err) {
       console.error('Error fetching default voices:', err);
-      // Don't show error to user - default voices not loading shouldn't break app
       setDefaultVoicePacks([]);
     }
   }, []);
 
-useEffect(() => {
-  // Fetch default voices on mount
-  fetchDefaultVoices()
+  useEffect(() => {
+    fetchDefaultVoices();
 
-  // Optional: Refresh default voices every 5 minutes
-  const interval = setInterval(fetchDefaultVoices, 5 * 60 * 1000)
-  return () => clearInterval(interval)
-}, [fetchDefaultVoices])
+    const interval = setInterval(fetchDefaultVoices, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchDefaultVoices]);
 
   return {
     currentVoicePack,
@@ -503,7 +468,7 @@ useEffect(() => {
     currentProgress,
     showProgress,
     defaultVoicePacks,
-  refreshDefaultVoices: fetchDefaultVoices,
+    refreshDefaultVoices: fetchDefaultVoices,
     createVoicePack,
     loadVoicePack,
     updateVoicePack,

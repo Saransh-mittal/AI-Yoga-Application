@@ -70,3 +70,11 @@ app/test-sse/
 
 # UI components - DO NOT ignore (shadcn components are source files needed for build)
 # components/ui/
+
+# AI Generated Architecture & Learning Notes
+docs/learning_phases/
+
+/profile_for_interview
+
+# Test scripts
+backend/xtts_service/test_*.py
