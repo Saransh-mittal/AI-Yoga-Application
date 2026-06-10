@@ -115,8 +115,8 @@ class VoicePackService {
       downloadedBlobs[phaseKey] = [];
       const filenames = audioFiles[phaseKey as keyof typeof audioFiles] || [];
       for (let i = 0; i < filenames.length; i++) {
-        const url = this.getAudioUrl(packId, phaseKey, i);
-        const response = await fetch(url);
+        const url = `${this.getAudioUrl(packId, phaseKey, i)}?t=${Date.now()}`;
+        const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error(`Failed to download audio variant ${i} for phase ${phaseKey}`);
         }
@@ -289,14 +289,28 @@ class VoicePackService {
             });
           }
 
-          const localPack = await indexedDbService.getVoicePack(packId);
+          let localPack = await indexedDbService.getVoicePack(packId);
+          const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
           if (localPack) {
-            const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
             localPack.instructions = voicePack.instructions;
             localPack.audioFiles = audioBlobs;
-            await indexedDbService.saveVoicePack(localPack);
-            console.log(`✅ Updated voice pack ${packId} in IndexedDB.`);
+            localPack.speed = voicePack.speed;
+          } else {
+            // Create local record if not exists
+            localPack = {
+              id: voicePack.id,
+              userEmail,
+              name: voicePack.name,
+              language: voicePack.language,
+              speed: voicePack.speed,
+              instructions: voicePack.instructions,
+              createdAt: voicePack.created_at,
+              voiceSampleBlob: new Blob(), // Placeholder empty blob
+              audioFiles: audioBlobs
+            };
           }
+          await indexedDbService.saveVoicePack(localPack);
+          console.log(`✅ Updated voice pack ${packId} in IndexedDB.`);
         } catch (cacheError) {
           console.error('⚠️ Failed to update local IndexedDB cache:', cacheError);
         }
@@ -389,14 +403,27 @@ class VoicePackService {
             });
           }
 
-          const localPack = await indexedDbService.getVoicePack(packId);
+          let localPack = await indexedDbService.getVoicePack(packId);
+          const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
           if (localPack) {
-            const audioBlobs = await this.downloadAudioBlobs(voicePack.id, voicePack.audio_files);
             localPack.speed = voicePack.speed;
             localPack.audioFiles = audioBlobs;
-            await indexedDbService.saveVoicePack(localPack);
-            console.log(`✅ Updated speed for voice pack ${packId} in IndexedDB.`);
+          } else {
+            // Create local record if not exists
+            localPack = {
+              id: voicePack.id,
+              userEmail,
+              name: voicePack.name,
+              language: voicePack.language,
+              speed: voicePack.speed,
+              instructions: voicePack.instructions,
+              createdAt: voicePack.created_at,
+              voiceSampleBlob: new Blob(), // Placeholder empty blob
+              audioFiles: audioBlobs
+            };
           }
+          await indexedDbService.saveVoicePack(localPack);
+          console.log(`✅ Updated speed for voice pack ${packId} in IndexedDB.`);
         } catch (cacheError) {
           console.error('⚠️ Failed to update local IndexedDB cache:', cacheError);
         }
@@ -518,7 +545,9 @@ class VoicePackService {
       }
 
       // 2. Fetch from backend if not in local IndexedDB
-      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy/${packId}`);
+      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy/${packId}?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -557,8 +586,8 @@ class VoicePackService {
           queryParams.append('language', language);
         }
 
-        const url = `${this.getBackendUrl()}/api/xtts-proxy?${queryParams.toString()}`;
-        const response = await fetch(url);
+        const url = `${this.getBackendUrl()}/api/xtts-proxy?${queryParams.toString()}&t=${Date.now()}`;
+        const response = await fetch(url, { cache: 'no-store' });
         if (response.ok) {
           const data = await response.json();
           systemDefaults = Array.isArray(data) ? data : data.voice_packs || [];
@@ -702,7 +731,9 @@ class VoicePackService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy`);
+      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
       return response.ok;
     } catch (error) {
       console.error('Backend connection test failed:', error);
@@ -715,7 +746,9 @@ class VoicePackService {
    */
   async getBackendStatus(): Promise<any> {
     try {
-      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy`);
+      const response = await fetch(`${this.getBackendUrl()}/api/xtts-proxy?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
 
       if (!response.ok) {
         throw new Error('Backend not responding');
