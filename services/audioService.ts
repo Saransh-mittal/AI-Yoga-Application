@@ -122,6 +122,7 @@ class AudioService {
         const blob = localPack.audioFiles[phaseKey][variantIndex];
         arrayBuffer = await blob.arrayBuffer();
         console.log(`📦 Loaded buffer from IndexedDB cache: ${cacheKey}`);
+      } else {
         // 2. Fallback to network fetch
         const url = `${voicePackService.getAudioUrl(packId, phaseKey, variantIndex)}?t=${Date.now()}`;
         const response = await fetch(url, { cache: 'no-store' });
