@@ -485,7 +485,7 @@ class VoicePackService {
           eventSource.close();
           reject(new Error('Operation timeout'));
         }
-      }, 600000); // 10 minutes
+      }, 900000); // 15 minutes
     });
   }
 

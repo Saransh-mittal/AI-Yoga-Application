@@ -406,7 +406,7 @@ async def stream_voice_pack_progress(operation_id: str):
         logger.info(f"Ã°Å¸â€œÂ¡ SSE connection opened for operation {operation_id}")
 
         last_progress = None
-        max_wait_time = 300  # 5 minutes timeout
+        max_wait_time = 900  # 15 minutes timeout
         elapsed_time = 0
         check_interval = 0.5  # Check every 500ms
 
