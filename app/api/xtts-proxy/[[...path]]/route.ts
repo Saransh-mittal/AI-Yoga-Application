@@ -62,9 +62,18 @@ export async function POST(
       statusText: response.statusText,
     });
 
-    // Copy backend headers to the response
+    // Copy backend headers to the response, avoiding content/connection headers that cause decoding issues
     response.headers.forEach((value, key) => {
-      proxyResponse.headers.set(key, value);
+      const lowerKey = key.toLowerCase();
+      if (
+        lowerKey !== "content-encoding" &&
+        lowerKey !== "content-length" &&
+        lowerKey !== "transfer-encoding" &&
+        lowerKey !== "connection" &&
+        lowerKey !== "keep-alive"
+      ) {
+        proxyResponse.headers.set(key, value);
+      }
     });
 
     return proxyResponse;
@@ -133,8 +142,18 @@ export async function GET(
       statusText: response.statusText,
     });
 
+    // Copy backend headers to the response, avoiding content/connection headers that cause decoding issues
     response.headers.forEach((value, key) => {
-      proxyResponse.headers.set(key, value);
+      const lowerKey = key.toLowerCase();
+      if (
+        lowerKey !== "content-encoding" &&
+        lowerKey !== "content-length" &&
+        lowerKey !== "transfer-encoding" &&
+        lowerKey !== "connection" &&
+        lowerKey !== "keep-alive"
+      ) {
+        proxyResponse.headers.set(key, value);
+      }
     });
 
     return proxyResponse;
